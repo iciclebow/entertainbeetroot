@@ -1,0 +1,50 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
+index e5defc4..b8ba848 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
+@@ -59,6 +59,10 @@ EnetApp_Cfg gEnetAppCfg =
+ static const uint8_t BROADCAST_MAC_ADDRESS[ENET_MAC_ADDR_LEN] = {
+     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+ };
++/* DP83TC815 PHY Status Frame destination multicast MAC. */
++static const uint8_t DP83TC815_PSF_DST_MAC_ADDRESS[ENET_MAC_ADDR_LEN] = {
++    0x01, 0x1B, 0x19, 0x00, 0x00, 0x00
++};
+ 
+ /* these vars are shared with gptp task to configure gptp, put it in the global mem */
+ static char g_netdevices[MAX_NUM_MAC_PORTS][CB_MAX_NETDEVNAME] = {0};
+@@ -67,6 +71,8 @@ static char g_netdevices[MAX_NUM_MAC_PORTS][CB_MAX_NETDEVNAME] = {0};
+ /*                           Function Declarations                            */
+ /* ========================================================================== */
+ 
++static void EnetApp_addPsfMulticastEntry(void);
++
+ static void EnetApp_updateCfg(EnetApp_Cfg *enet_cfg)
+ {
+     EnetApp_getEnetInstInfo(CONFIG_ENET_CPSW0, &enet_cfg->enetType, &enet_cfg->instId);
+@@ -295,6 +301,7 @@ void EnetApp_initAppCfg(EnetPer_AttachCoreOutArgs *attachArgs, EnetApp_HandleInf
+     gEnetAppCfg.hEnet = handleInfo->hEnet;
+     EnetApp_coreAttach(gEnetAppCfg.enetType, gEnetAppCfg.instId, gEnetAppCfg.coreId, attachArgs);
+     gEnetAppCfg.coreKey = attachArgs->coreKey;
++    EnetApp_addPsfMulticastEntry();
+ 
+     EnetApp_enableTsSync();
+ }
+@@ -418,6 +425,17 @@ void EnetApp_addBroadcastEntry(void)
+                           CPSW_ALE_ALL_PORTS_MASK);
+ }
+ 
++static void EnetApp_addPsfMulticastEntry(void)
++{
++    /* Explicitly admit PSF multicast destination to host via ALE so
++     * diagnostic and correlation paths can observe PHY status frames. */
++    EnetApp_addMCastEntry(gEnetAppCfg.enetType,
++                          gEnetAppCfg.instId,
++                          EnetSoc_getCoreId(),
++                          DP83TC815_PSF_DST_MAC_ADDRESS,
++                          CPSW_ALE_ALL_PORTS_MASK);
++}
++
+ void EnetApp_setMacAddr(uint8_t hwaddr[])
+ {
+     memcpy(gEnetAppCfg.macAddr, hwaddr, ENET_MAC_ADDR_LEN);
