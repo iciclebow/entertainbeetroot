@@ -384,3 +384,59 @@ index 1a8366ba0bec6c6d839fae37fc0562dd93c1593d..6e18c59addf4b1d0a94f8ecc7dc4e6ac
                  txPktInfo->tsInfo.enableHostTxTs = false;
  
                  EnetDma_checkPktState(&txPktInfo->pktState,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		/* SPARE_IN_FROM_DIG_SL_1 (0x05B7): "register with configurable bits for analog section".
+		 * Datasheet note for PTP/PSF: toggle bit5 from 0->1->0 before accessing 0x0Dxx/PTP registers.
+		 */
+		{0x1F, 0x05B7, 0x0043}, /* 0b0000_0000_0100_0011: bit6=1, bit1=1, bit0=1, bit5=0 (toggle start) */
+		{0x1F, 0x05B7, 0x0063}, /* 0b0000_0000_0110_0011: bit5=1 while keeping bit6/1/0 unchanged */
+		{0x1F, 0x05B7, 0x0043}, /* 0b0000_0000_0100_0011: bit5 cleared back to 0 (toggle complete) */
+
+		/* PTP_CTL (0x0D00): "provides basic controls for the PTP 802.1AS operation". */
+		{0x1F, 0x0D00, 0x0001}, /* 0b0000_0000_0000_0001: PTP Reset bit0=1 (assert reset) */
+		{0x1F, 0x0D00, 0x0000}, /* 0b0000_0000_0000_0000: bit0=0 (release reset) */
+		{0x1F, 0x0D00, 0x0004}, /* 0b0000_0000_0000_0100: PTP Enable bit2=1 */
+
+		/* PSF_CFG0 (0x0D14): "configuration for the Phy Status Frame function". */
+		{0x1F, 0x0D14, 0x470D}, /* 0b0100_0111_0000_1101:
+		                         * bit14=1 termination field enable,
+		                         * bits12:11=00 MAC source selection default,
+		                         * bits10:8=111 minimum preamble=7,
+		                         * bit7=0 network-byte-order fields,
+		                         * bit6=0 Layer2 PSF packet type,
+		                         * bit3=1 TX TS PSF enable, bit2=1 RX TS PSF enable, bit0=1 Event PSF enable.
+		                         */
+
+		/* PSF_CFG1 (0x0D21): "first 16-bits of the PTP header for PSF packets". */
+		{0x1F, 0x0D21, 0x0200}, /* 0b0000_0010_0000_0000: versionPTP bits11:8=0b0010 (PTP v2), others 0 */
+
+		/* PTP_TXCFG0 (0x0D12): "configuration for IEEE 802.1AS transmit timestamp operation". */
+		{0x1F, 0x0D12, 0x0085}, /* 0b0000_0000_1000_0101:
+		                         * bit7=1 Layer2 timestamp detect,
+		                         * bits4:1=0b0010 PTP version match=v2,
+		                         * bit0=1 transmit timestamp enable.
+		                         */
+
+		/* PTP_RXCFG0 (0x0D15): "configuration for IEEE 802.1AS receive timestamp operation". */
+		{0x1F, 0x0D15, 0x0085}, /* 0b0000_0000_1000_0101:
+		                         * bit7=1 Layer2 timestamp detect,
+		                         * bits4:1=0b0010 PTP version match=v2,
+		                         * bit0=1 receive timestamp enable.
+		                         */
