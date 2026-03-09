@@ -1,3 +1,4 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
 index 51b24dcd97d72d6ff9093cb4624c76fe5dc2f44d..422e6d096719553a504f116554daddb5fd0e319c 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
@@ -728,3 +729,6 @@ index 1a8366ba0bec6c6d839fae37fc0562dd93c1593d..01e870e1be7bcc1cacd9ae71eaef741b
  }
  
  void EnetApp_createRxTask()
+ 
+EOF
+)
