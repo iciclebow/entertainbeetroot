@@ -1,0 +1,386 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index 1a8366ba0bec6c6d839fae37fc0562dd93c1593d..6e18c59addf4b1d0a94f8ecc7dc4e6ac70316da4 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -22,50 +22,90 @@
+  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+  *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+  *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+  *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  */
+ 
+ /* ========================================================================== */
+ /*                              Include Files                                 */
+ /* ========================================================================== */
+ #include <tsn_combase/combase.h>
+ #include "dataflow.h"
+ #include "enetapp_cpsw.h"
+ #include "tsnapp_porting.h"
+ 
+ /* ========================================================================== */
+ /*                                Function Declarations                       */
+ /* ========================================================================== */
+ extern EnetApp_Cfg gEnetAppCfg;
+ static uint8_t gEnetAppTaskStackRx[ENETAPP_TASK_STACK_SZ] __attribute__ ((aligned(32)));
+ 
++/* Set to 1 to include periodic RX frame overview logs in default flow */
++#ifndef ENETAPP_ENABLE_RX_FRAME_DEBUG
++#define ENETAPP_ENABLE_RX_FRAME_DEBUG            (0U)
++#endif
++
++#ifndef ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS
++#define ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS (5000U)
++#endif
++
++#ifndef ENETAPP_RX_FRAME_DEBUG_SAMPLE_EVERY_N_FRAMES
++#define ENETAPP_RX_FRAME_DEBUG_SAMPLE_EVERY_N_FRAMES (1U)
++#endif
++
++/* Optional selective frame-byte dump controls */
++#ifndef ENETAPP_ENABLE_RX_FRAME_DUMP
++#define ENETAPP_ENABLE_RX_FRAME_DUMP               (0U)
++#endif
++
++#ifndef ENETAPP_RX_FRAME_DUMP_MAX_BYTES
++#define ENETAPP_RX_FRAME_DUMP_MAX_BYTES            (64U)
++#endif
++
++#ifndef ENETAPP_RX_FRAME_DUMP_DECIMATION
++#define ENETAPP_RX_FRAME_DUMP_DECIMATION           (1U)
++#endif
++
++#ifndef ENETAPP_RX_FRAME_DUMP_INTERVAL_MS
++#define ENETAPP_RX_FRAME_DUMP_INTERVAL_MS          (1000U)
++#endif
++
++#define ENETAPP_RX_DUMP_BUCKET_PHY_STATUS          (1U << 0U)
++#define ENETAPP_RX_DUMP_BUCKET_OTHER               (1U << 1U)
++#define ENETAPP_RX_DUMP_BUCKET_PTP                 (1U << 2U)
++#define ENETAPP_RX_DUMP_BUCKET_IPV4                (1U << 3U)
++#define ENETAPP_RX_DUMP_BUCKET_VLAN                (1U << 4U)
++
++#ifndef ENETAPP_RX_FRAME_DUMP_BUCKET_MASK
++#define ENETAPP_RX_FRAME_DUMP_BUCKET_MASK          (ENETAPP_RX_DUMP_BUCKET_PHY_STATUS | ENETAPP_RX_DUMP_BUCKET_OTHER)
++#endif
++
+ static void EnetApp_initTxFreePktQ(void);
+ static uint32_t EnetApp_retrieveFreeTxPkts();
+ static void EnetApp_initRxReadyPktQ(EnetDma_RxChHandle hRxCh);
+ 
+ /* Rx Isr for non-gPTP traffic */
+ static void EnetApp_rxIsrFxn(void *appData)
+ {
+     SemaphoreP_post(&gEnetAppCfg.rxSemObj);
+ }
+ 
+ static int32_t EnetApp_openDma()
+ {
+     EnetApp_GetDmaHandleInArgs     txInArgs;
+     EnetApp_GetTxDmaHandleOutArgs  txChInfo;
+     int32_t status = ENET_SOK;
+ 
+     /* Open the TX channel */
+     txInArgs.cbArg   = NULL;
+     txInArgs.notifyCb = NULL;
+ 
+     EnetApp_getTxDmaHandle((ENET_DMA_TX_CH0),
+                            &txInArgs,
+                            &txChInfo);
+ 
+     gEnetAppCfg.txChNum = txChInfo.txChNum;
+@@ -301,50 +341,290 @@ static void EnetApp_rxTask(void *args)
+         EnetQueue_initQ(&txSubmitQ);
+ 
+         /* Get the packets received so far */
+         status = EnetDma_retrieveRxPktQ(gEnetAppCfg.hRxCh, &rxReadyQ);
+         if (status != ENET_SOK)
+         {
+             /* Should we bail out here? */
+             EnetAppUtils_print("Failed to retrieve RX pkt queue: %d\r\n", status);
+             continue;
+         }
+ #if DEBUG
+         EnetAppUtils_print("%s: Received %u packets\r\n", gEnetAppCfg.name, EnetQueue_getQCount(&rxReadyQ));
+ #endif
+         totalRxCnt += EnetQueue_getQCount(&rxReadyQ);
+ 
+         /* Consume the received packets and send them back */
+         rxPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&rxReadyQ);
+         while (rxPktInfo != NULL)
+         {
+             rxFrame = (EthFrame *)rxPktInfo->sgList.list[0].bufPtr;
+             EnetDma_checkPktState(&rxPktInfo->pktState,
+                                     ENET_PKTSTATE_MODULE_APP,
+                                     ENET_PKTSTATE_APP_WITH_DRIVER,
+                                     ENET_PKTSTATE_APP_WITH_READYQ);
+ 
++#if ENETAPP_ENABLE_RX_FRAME_DEBUG
++            {
++                /*
++                 * Periodic RX frame overview (single-block debug helper)
++                 * Expected gPTP app traffic buckets:
++                 *   - phyStatus : default TI PHY status frame header match
++                 *   - ptp       : IEEE 1588/gPTP frames (0x88F7), with message-type split
++                 *   - ipv4/arp/ipv6/lldp/tsn
++                 *   - vlanTagged and other
++                 */
++                static const uint8_t phyStatusHdr[14U] = {
++                    0x01, 0x1B, 0x19, 0x00, 0x00, 0x00,
++                    0x08, 0x00, 0x17, 0x0B, 0x6B, 0x0F,
++                    0x88, 0xF7,
++                };
++                static uint32_t total = 0U;
++                static uint32_t phyStatus = 0U;
++                static uint32_t ptp = 0U;
++                static uint32_t ptpSync = 0U;
++                static uint32_t ptpDelayReq = 0U;
++                static uint32_t ptpPdelayReq = 0U;
++                static uint32_t ptpPdelayResp = 0U;
++                static uint32_t ptpFollowUp = 0U;
++                static uint32_t ptpDelayResp = 0U;
++                static uint32_t ptpPdelayRespFollowUp = 0U;
++                static uint32_t ptpAnnounce = 0U;
++                static uint32_t ptpSignaling = 0U;
++                static uint32_t ptpManagement = 0U;
++                static uint32_t ptpOtherMsg = 0U;
++                static uint32_t ipv4 = 0U;
++                static uint32_t arp = 0U;
++                static uint32_t ipv6 = 0U;
++                static uint32_t lldp = 0U;
++                static uint32_t tsn = 0U;
++                static uint32_t vlanTagged = 0U;
++                static uint32_t other = 0U;
++                static uint32_t lastPrintTimeMs = 0U;
++                static uint32_t sampleDecimCounter = 0U;
++#if ENETAPP_ENABLE_RX_FRAME_DUMP
++                static uint32_t dumpDecimCounter = 0U;
++                static uint32_t lastDumpTimeMs = 0U;
++#endif
++                uint16_t ethType = 0U;
++                uint32_t l2HdrLen = 14U;
++                uint32_t dumpBucket = 0U;
++                const char *bucketName = "other";
++                const uint8_t *frame = (const uint8_t *)rxFrame;
++                const uint32_t frameLen = rxPktInfo->sgList.list[0].segmentFilledLen;
++                const uint32_t nowMs = ClockP_getTimeUsec() / 1000U;
++                uint32_t sampleEveryN = ENETAPP_RX_FRAME_DEBUG_SAMPLE_EVERY_N_FRAMES;
++
++                if (sampleEveryN == 0U)
++                {
++                    sampleEveryN = 1U;
++                }
++
++                sampleDecimCounter++;
++                if ((frameLen >= 14U) && (sampleDecimCounter >= sampleEveryN))
++                {
++                    sampleDecimCounter = 0U;
++                    total++;
++
++                    if (memcmp(frame, phyStatusHdr, sizeof(phyStatusHdr)) == 0)
++                    {
++                        phyStatus++;
++                        dumpBucket = ENETAPP_RX_DUMP_BUCKET_PHY_STATUS;
++                        bucketName = "phyStatus";
++                    }
++                    else
++                    {
++                        ethType = ((uint16_t)frame[12U] << 8U) | frame[13U];
++
++                        if ((ethType == 0x8100U) || (ethType == 0x88A8U))
++                        {
++                            vlanTagged++;
++                            dumpBucket = ENETAPP_RX_DUMP_BUCKET_VLAN;
++                            bucketName = "vlan";
++                            l2HdrLen += 4U;
++                            if (frameLen >= l2HdrLen)
++                            {
++                                ethType = ((uint16_t)frame[l2HdrLen - 2U] << 8U) | frame[l2HdrLen - 1U];
++                            }
++                        }
++
++                        if ((ethType == 0x8100U) || (ethType == 0x88A8U))
++                        {
++                            vlanTagged++;
++                            dumpBucket = ENETAPP_RX_DUMP_BUCKET_VLAN;
++                            bucketName = "vlan";
++                            l2HdrLen += 4U;
++                            if (frameLen >= l2HdrLen)
++                            {
++                                ethType = ((uint16_t)frame[l2HdrLen - 2U] << 8U) | frame[l2HdrLen - 1U];
++                            }
++                        }
++
++                        if (ethType == 0x88F7U)
++                        {
++                            uint8_t msgType = 0xFFU;
++                            ptp++;
++                            dumpBucket = ENETAPP_RX_DUMP_BUCKET_PTP;
++                            bucketName = "ptp";
++                            if (frameLen > l2HdrLen)
++                            {
++                                msgType = frame[l2HdrLen] & 0x0FU;
++                            }
++                            switch (msgType)
++                            {
++                                case 0x0U: ptpSync++; break;
++                                case 0x1U: ptpDelayReq++; break;
++                                case 0x2U: ptpPdelayReq++; break;
++                                case 0x3U: ptpPdelayResp++; break;
++                                case 0x8U: ptpFollowUp++; break;
++                                case 0x9U: ptpDelayResp++; break;
++                                case 0xAU: ptpPdelayRespFollowUp++; break;
++                                case 0xBU: ptpAnnounce++; break;
++                                case 0xCU: ptpSignaling++; break;
++                                case 0xDU: ptpManagement++; break;
++                                default:   ptpOtherMsg++; break;
++                            }
++                        }
++                        else if (ethType == 0x0800U)
++                        {
++                            ipv4++;
++                            dumpBucket = ENETAPP_RX_DUMP_BUCKET_IPV4;
++                            bucketName = "ipv4";
++                        }
++                        else if (ethType == 0x0806U)
++                        {
++                            arp++;
++                        }
++                        else if (ethType == 0x86DDU)
++                        {
++                            ipv6++;
++                        }
++                        else if (ethType == 0x88CCU)
++                        {
++                            lldp++;
++                        }
++                        else if (ethType == 0x22F0U)
++                        {
++                            tsn++;
++                        }
++                        else
++                        {
++                            other++;
++                            dumpBucket = ENETAPP_RX_DUMP_BUCKET_OTHER;
++                            bucketName = "other";
++                        }
++                    }
++
++                    if (lastPrintTimeMs == 0U)
++                    {
++                        lastPrintTimeMs = nowMs;
++                    }
++                    else if ((nowMs - lastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
++                    {
++                        EnetAppUtils_print(
++                            "%s: RX frame overview: total=%u phyStatus=%u ptp=%u ipv4=%u arp=%u ipv6=%u lldp=%u tsn=%u vlan=%u other=%u\r\n",
++                            gEnetAppCfg.name,
++                            total,
++                            phyStatus,
++                            ptp,
++                            ipv4,
++                            arp,
++                            ipv6,
++                            lldp,
++                            tsn,
++                            vlanTagged,
++                            other);
++                        EnetAppUtils_print(
++                            "%s: RX ptp detail: sync=%u dreq=%u pdreq=%u pdresp=%u fup=%u dresp=%u pdfup=%u ann=%u sig=%u mgmt=%u oth=%u\r\n",
++                            gEnetAppCfg.name,
++                            ptpSync,
++                            ptpDelayReq,
++                            ptpPdelayReq,
++                            ptpPdelayResp,
++                            ptpFollowUp,
++                            ptpDelayResp,
++                            ptpPdelayRespFollowUp,
++                            ptpAnnounce,
++                            ptpSignaling,
++                            ptpManagement,
++                            ptpOtherMsg);
++                        lastPrintTimeMs = nowMs;
++                    }
++
++#if ENETAPP_ENABLE_RX_FRAME_DUMP
++                    {
++                        uint32_t dumpDecimation = ENETAPP_RX_FRAME_DUMP_DECIMATION;
++                        uint32_t maxDumpBytes = ENETAPP_RX_FRAME_DUMP_MAX_BYTES;
++                        const uint32_t bytesPerLine = 16U;
++                        uint32_t i;
++
++                        if (dumpDecimation == 0U)
++                        {
++                            dumpDecimation = 1U;
++                        }
++
++                        dumpDecimCounter++;
++                        if (maxDumpBytes > frameLen)
++                        {
++                            maxDumpBytes = frameLen;
++                        }
++
++                        if ((maxDumpBytes > 0U) &&
++                            ((ENETAPP_RX_FRAME_DUMP_BUCKET_MASK & dumpBucket) != 0U) &&
++                            (dumpDecimCounter >= dumpDecimation) &&
++                            ((lastDumpTimeMs == 0U) || ((nowMs - lastDumpTimeMs) >= ENETAPP_RX_FRAME_DUMP_INTERVAL_MS)))
++                        {
++                            dumpDecimCounter = 0U;
++                            lastDumpTimeMs = nowMs;
++
++                            EnetAppUtils_print("%s: RX dump bucket=%s len=%u bytes=%u\r\n",
++                                               gEnetAppCfg.name,
++                                               bucketName,
++                                               frameLen,
++                                               maxDumpBytes);
++
++                            for (i = 0U; i < maxDumpBytes; i++)
++                            {
++                                if ((i % bytesPerLine) == 0U)
++                                {
++                                    EnetAppUtils_print("  %03u:", i);
++                                }
++
++                                EnetAppUtils_print(" %02x", frame[i]);
++
++                                if ((((i + 1U) % bytesPerLine) == 0U) || ((i + 1U) == maxDumpBytes))
++                                {
++                                    EnetAppUtils_print("\r\n");
++                                }
++                            }
++                        }
++                    }
++#endif
++                }
++            }
++#endif
++
+             /* Retrieve TX packets from driver and recycle them */
+             EnetApp_retrieveFreeTxPkts();
+ 
+             /* Dequeue one free TX Eth packet */
+             txPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&gEnetAppCfg.txFreePktInfoQ);
+             if (txPktInfo != NULL)
+             {
+                 /* Fill the TX Eth frame with test content */
+                 txFrame = (EthFrame *)txPktInfo->sgList.list[0].bufPtr;
+                 memcpy(txFrame->hdr.dstMac, rxFrame->hdr.srcMac, ENET_MAC_ADDR_LEN);
+                 memcpy(txFrame->hdr.srcMac, &gEnetAppCfg.macAddr[0U], ENET_MAC_ADDR_LEN);
+                 txFrame->hdr.etherType = rxFrame->hdr.etherType;
+ 
+                 txPktInfo->sgList.list[0].segmentFilledLen = rxPktInfo->sgList.list[0].segmentFilledLen;
+                 EnetAppUtils_assert(txPktInfo->sgList.list[0].segmentAllocLen >= txPktInfo->sgList.list[0].segmentFilledLen);
+                 memcpy(&txFrame->payload[0U],
+                         &rxFrame->payload[0U],
+                         rxPktInfo->sgList.list[0].segmentFilledLen - sizeof(EthFrameHeader));
+ 
+                 txPktInfo->sgList.numScatterSegments = 1;
+                 txPktInfo->chkSumInfo = 0U;
+                 txPktInfo->appPriv = &gEnetAppCfg;
+                 txPktInfo->tsInfo.enableHostTxTs = false;
+ 
+                 EnetDma_checkPktState(&txPktInfo->pktState,
