@@ -1,0 +1,470 @@
+diff --git a/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index 01e870e..23abb73 100644
+--- a/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -37,6 +37,7 @@
+ #include "dataflow.h"
+ #include "enetapp_cpsw.h"
+ #include "tsnapp_porting.h"
++#include <networking/enet/core/include/core/enet_mod_phy.h>
+ #include <networking/enet/core/include/mod/cpsw_stats.h>
+ 
+ /* ========================================================================== */
+@@ -609,6 +610,53 @@ static void EnetApp_rxTask(void *args)
+                                     ENET_PKTSTATE_APP_WITH_DRIVER,
+                                     ENET_PKTSTATE_APP_WITH_READYQ);
+ 
++            {
++                /* ======================= Phase-1 PHY PSF ingest ======================= */
++                /*
++                 * Forward every default-flow PHY status frame into the new PHY IOCTL.
++                 * This keeps the active RX ingress point unchanged while validating
++                 * the end-to-end API path into the PHY driver.
++                 */
++                static const uint8_t phyStatusHdr[14U] = {
++                    0x01, 0x1B, 0x19, 0x00, 0x00, 0x00,
++                    0x08, 0x00, 0x17, 0x0B, 0x6B, 0x0F,
++                    0x88, 0xF7,
++                };
++                const uint8_t *psfFrame = (const uint8_t *)rxFrame;
++                const uint32_t psfFrameLen = rxPktInfo->sgList.list[0].segmentFilledLen;
++
++                if ((psfFrameLen >= sizeof(phyStatusHdr)) &&
++                    (memcmp(psfFrame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
++                {
++                    EnetPhy_PtpStatusFrameInArgs inArgs;
++                    Enet_IoctlPrms psfPrms;
++                    Enet_MacPort psfMacPort = ENET_MAC_PORT_1;
++                    int32_t psfStatus = ENET_SOK;
++
++                    if (gEnetAppCfg.numMacPorts > 0U)
++                    {
++                        psfMacPort = gEnetAppCfg.macPorts[0U];
++                    }
++
++                    inArgs.macPort = psfMacPort;
++                    inArgs.frame = psfFrame;
++                    inArgs.frameLen = psfFrameLen;
++                    ENET_IOCTL_SET_IN_ARGS(&psfPrms, &inArgs);
++                    ENET_IOCTL(gEnetAppCfg.hEnet,
++                               gEnetAppCfg.coreId,
++                               ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
++                               &psfPrms,
++                               psfStatus);
++
++                    if (psfStatus != ENET_SOK)
++                    {
++                        EnetAppUtils_print("%s: PHY PSF ingest ioctl failed: %d\r\n",
++                                           gEnetAppCfg.name,
++                                           psfStatus);
++                    }
++                }
++            }
++
+ #if ENETAPP_ENABLE_RX_FRAME_DEBUG
+             {
+                 /* ======================= PSF Debug: default RX flow ======================= */
+diff --git a/source/networking/enet/core/include/core/enet_mod_phy.h b/source/networking/enet/core/include/core/enet_mod_phy.h
+index 7eb3269..73cf2a0 100644
+--- a/source/networking/enet/core/include/core/enet_mod_phy.h
++++ b/source/networking/enet/core/include/core/enet_mod_phy.h
+@@ -197,6 +197,15 @@ enum EnetPhy_Ioctl_e
+      * - outArgs: None
+      */
+     ENET_PHY_IOCTL_PRINT_REGS = ENET_PHY_PUBLIC_IOCTL(13U),
++
++    /*!
++     * \brief Forward a PHY status frame to the active PHY driver for PTP ingest.
++     *
++     * IOCTL parameters:
++     * -  inArgs: #EnetPhy_PtpStatusFrameInArgs
++     * - outArgs: None
++     */
++    ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME = ENET_PHY_PUBLIC_IOCTL(14U),
+ };
+ 
+ /*!
+@@ -268,6 +277,21 @@ typedef struct EnetPhy_C45WriteRegInArgs_s
+     uint16_t val;
+ } EnetPhy_C45WriteRegInArgs;
+ 
++/*!
++ * \brief Input args for #ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME command.
++ */
++typedef struct EnetPhy_PtpStatusFrameInArgs_s
++{
++    /*! Port number */
++    Enet_MacPort macPort;
++
++    /*! Pointer to the received PHY status frame */
++    const uint8_t *frame;
++
++    /*! Size of the received PHY status frame in bytes */
++    uint32_t frameLen;
++} EnetPhy_PtpStatusFrameInArgs;
++
+ /* ========================================================================== */
+ /*                         Global Variables Declarations                      */
+ /* ========================================================================== */
+diff --git a/source/networking/enet/core/priv/mod/phy_ioctl_priv.h b/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+index bc2454c..563bca4 100644
+--- a/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
++++ b/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+@@ -87,6 +87,7 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_WRITE_EXT_REG(EnetPhy_Hand
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_READ_REG(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_WRITE_REG(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PRINT_REGS(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ 
+ /* ========================================================================== */
+ /*                        Deprecated Function Declarations                    */
+diff --git a/source/networking/enet/core/src/common/enet_phymdio_dflt.c b/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+index 58fc9f9..82e4102 100644
+--- a/source/networking/enet/core/src/common/enet_phymdio_dflt.c
++++ b/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+@@ -157,6 +157,7 @@ static EnetPhyMdioDfltIoctlHandlerRegistry_t EnetPhyMdioDfltIoctlHandlerRegistry
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_C45_READ_REG),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_C45_WRITE_REG),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PRINT_REGS),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT(ENET_PHY_IOCTL_REGISTER_HANDLER),
+ };
+ 
+diff --git a/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c b/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+index 17f49c9..8377abe 100644
+--- a/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
++++ b/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+@@ -243,3 +243,33 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PRINT_REGS(EnetPhy_Handle
+     return status;
+ }
+ 
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms)
++{
++    const EnetPhy_PtpStatusFrameInArgs *inArgs = (const EnetPhy_PtpStatusFrameInArgs *)prms->inArgs;
++    int32_t status = ENET_SOK;
++    uint32_t macPortId = 0U;
++
++    if ((inArgs == NULL) || (inArgs->frame == NULL) || (inArgs->frameLen == 0U))
++    {
++        status = ENETPHY_EBADARGS;
++    }
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->processStatusFrame == NULL))
++    {
++        status = ENET_ENOTSUPPORTED;
++    }
++    else
++    {
++        status = hPhy->hDrv->processStatusFrame(hPhy, inArgs->macPort, inArgs->frame, inArgs->frameLen);
++    }
++
++    if (inArgs != NULL)
++    {
++        macPortId = ENET_MACPORT_ID(inArgs->macPort);
++    }
++
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to process PHY status frame: %d\n",
++                     macPortId, status);
++    return status;
++}
++
+diff --git a/source/networking/enet/core/src/core/enet.c b/source/networking/enet/core/src/core/enet.c
+index 6a5084d..bd3db78 100644
+--- a/source/networking/enet/core/src/core/enet.c
++++ b/source/networking/enet/core/src/core/enet.c
+@@ -646,6 +646,10 @@ static Enet_IoctlValidate gEnetPhy_ioctlValidate[] =
+     ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PRINT_REGS,
+                           sizeof(EnetPhy_GenericInArgs),
+                           0U),
++
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
++                          sizeof(EnetPhy_PtpStatusFrameInArgs),
++                          0U),
+ };
+ #endif
+ 
+diff --git a/source/networking/enet/core/src/phy/dp83tc812.c b/source/networking/enet/core/src/phy/dp83tc812.c
+index d4c3f0e..035101a 100644
+--- a/source/networking/enet/core/src/phy/dp83tc812.c
++++ b/source/networking/enet/core/src/phy/dp83tc812.c
+@@ -119,6 +119,11 @@ static void Dp83tc812_configClkShift(EnetPhy_Handle hPhy, bool txClkShiftEn, boo
+ 
+ static void Dp83tc812_configIntr(EnetPhy_Handle hPhy, bool intrEn);
+ 
++static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
++                                            Enet_MacPort macPort,
++                                            const uint8_t *frame,
++                                            uint32_t frameLen);
++
+ static void Dp83tc812_printRegs(EnetPhy_Handle hPhy);
+ 
+ /* ========================================================================== */
+@@ -135,6 +140,7 @@ EnetPhy_Drv gEnetPhyDrvDp83tc812 =
+     .isResetComplete    = Dp83tc812_isResetComplete,
+     .readExtReg         = GenericPhy_readExtReg,
+     .writeExtReg        = GenericPhy_writeExtReg,
++    .processStatusFrame = Dp83tc812_processStatusFrame,
+     .printRegs          = Dp83tc812_printRegs,
+ };
+ 
+@@ -144,6 +150,231 @@ static struct dp83tc812_privParams dp83tc812_params = {
+ 	.is_master = false,
+ };
+ 
++/* ======================= Phase 1 PHY PTP PSF ingest ======================= */
++/*
++ * Phase-1 goal:
++ * - Accept all PHY status frames at the driver boundary through the new PHY IOCTL.
++ * - Validate the fixed L2 header, decode known PSF shapes, and store only compact
++ *   semantic data in a driver-owned ring buffer.
++ * - Keep everything centralized in one block so bring-up prints and storage logic
++ *   are easy to inspect while the API path is still being validated.
++ *
++ * Notes:
++ * - Single-PHY assumption is intentional for this phase.
++ * - The type values are accepted in both 0x0010/0x0020/0x0040 and 0x1000/0x2000/0x4000
++ *   form until the exact 815 encoding is fully pinned down from runtime captures.
++ * - TX PSF payload is accepted with the 8-byte timestamp body already observed on
++ *   the wire; if extra words are present, they are decoded opportunistically.
++ */
++#define DP83TC812_PSF_RING_DEPTH              (32U)
++#define DP83TC812_PSF_ETH_HDR_LEN             (14U)
++#define DP83TC812_PSF_PTP_HDR_LEN             (2U)
++#define DP83TC812_PSF_TYPE_LEN                (2U)
++#define DP83TC812_PSF_TX_TYPE0                (0x0010U)
++#define DP83TC812_PSF_RX_TYPE0                (0x0020U)
++#define DP83TC812_PSF_EVENT_TYPE0             (0x0040U)
++#define DP83TC812_PSF_TX_TYPE1                (0x1000U)
++#define DP83TC812_PSF_RX_TYPE1                (0x2000U)
++#define DP83TC812_PSF_EVENT_TYPE1             (0x4000U)
++
++typedef struct Dp83tc812_PsfStoreEntry_s
++{
++    bool valid;
++    uint16_t psfType;
++    Enet_MacPort macPort;
++    uint64_t ts64;
++    uint16_t seqId;
++    uint8_t msgType;
++    uint16_t hash;
++    uint32_t storeIndex;
++} Dp83tc812_PsfStoreEntry;
++
++static const uint8_t gDp83tc812PsfEthHdr[DP83TC812_PSF_ETH_HDR_LEN] =
++{
++    0x01U, 0x1BU, 0x19U, 0x00U, 0x00U, 0x00U,
++    0x08U, 0x00U, 0x17U, 0x0BU, 0x6BU, 0x0FU,
++    0x88U, 0xF7U,
++};
++
++static Dp83tc812_PsfStoreEntry gDp83tc812PsfRing[DP83TC812_PSF_RING_DEPTH];
++static uint32_t gDp83tc812PsfWriteIdx = 0U;
++static uint32_t gDp83tc812PsfCount = 0U;
++static uint32_t gDp83tc812PsfStoreSeq = 0U;
++
++static uint16_t Dp83tc812_readLe16(const uint8_t *ptr)
++{
++    return (uint16_t)ptr[0U] | ((uint16_t)ptr[1U] << 8U);
++}
++
++static uint64_t Dp83tc812_decodeTs64(const uint8_t *ptr)
++{
++    const uint32_t nsLow = Dp83tc812_readLe16(&ptr[0U]);
++    const uint32_t nsHigh = Dp83tc812_readLe16(&ptr[2U]) & 0x3FFFU;
++    const uint64_t secLow = Dp83tc812_readLe16(&ptr[4U]);
++    const uint64_t secHigh = Dp83tc812_readLe16(&ptr[6U]);
++    const uint64_t sec = secLow | (secHigh << 16U);
++    const uint64_t nsec = nsLow | ((uint64_t)nsHigh << 16U);
++
++    return (sec * 1000000000ULL) + nsec;
++}
++
++static bool Dp83tc812_isTxPsfType(uint16_t psfType)
++{
++    return ((psfType == DP83TC812_PSF_TX_TYPE0) || (psfType == DP83TC812_PSF_TX_TYPE1));
++}
++
++static bool Dp83tc812_isRxPsfType(uint16_t psfType)
++{
++    return ((psfType == DP83TC812_PSF_RX_TYPE0) || (psfType == DP83TC812_PSF_RX_TYPE1));
++}
++
++static bool Dp83tc812_isEventPsfType(uint16_t psfType)
++{
++    return ((psfType == DP83TC812_PSF_EVENT_TYPE0) || (psfType == DP83TC812_PSF_EVENT_TYPE1));
++}
++
++static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
++                                            Enet_MacPort macPort,
++                                            const uint8_t *frame,
++                                            uint32_t frameLen)
++{
++    Dp83tc812_PsfStoreEntry *entry;
++    const uint8_t *payload;
++    uint32_t payloadLen;
++    uint16_t ptpHdr;
++    uint16_t psfType;
++    uint32_t slot;
++    bool wrapped;
++    int32_t status = ENETPHY_SOK;
++
++    EnetUtils_printf("PHY %u: phase1 PSF ingest macPort=%u len=%u\r\n",
++                     hPhy->addr, ENET_MACPORT_ID(macPort), frameLen);
++
++    if ((frame == NULL) ||
++        (frameLen < (DP83TC812_PSF_ETH_HDR_LEN + DP83TC812_PSF_PTP_HDR_LEN + DP83TC812_PSF_TYPE_LEN)))
++    {
++        EnetUtils_printf("PHY %u: phase1 PSF reject: short/null frame len=%u\r\n",
++                         hPhy->addr, frameLen);
++        status = ENETPHY_EBADARGS;
++    }
++    else if (memcmp(frame, gDp83tc812PsfEthHdr, sizeof(gDp83tc812PsfEthHdr)) != 0)
++    {
++        EnetUtils_printf("PHY %u: phase1 PSF reject: header mismatch\r\n", hPhy->addr);
++        status = ENETPHY_EINVALIDPARAMS;
++    }
++    else
++    {
++        ptpHdr = Dp83tc812_readLe16(&frame[DP83TC812_PSF_ETH_HDR_LEN]);
++        psfType = Dp83tc812_readLe16(&frame[DP83TC812_PSF_ETH_HDR_LEN + DP83TC812_PSF_PTP_HDR_LEN]);
++        payload = &frame[DP83TC812_PSF_ETH_HDR_LEN + DP83TC812_PSF_PTP_HDR_LEN + DP83TC812_PSF_TYPE_LEN];
++        payloadLen = frameLen - (DP83TC812_PSF_ETH_HDR_LEN + DP83TC812_PSF_PTP_HDR_LEN + DP83TC812_PSF_TYPE_LEN);
++
++        EnetUtils_printf("PHY %u: phase1 PSF accept ptpHdr=0x%04x type=0x%04x payloadLen=%u\r\n",
++                         hPhy->addr, ptpHdr, psfType, payloadLen);
++
++        if (Dp83tc812_isTxPsfType(psfType))
++        {
++            if (payloadLen < 8U)
++            {
++                EnetUtils_printf("PHY %u: phase1 PSF reject TX: payload too short (%u)\r\n",
++                                 hPhy->addr, payloadLen);
++            }
++            else
++            {
++                slot = gDp83tc812PsfWriteIdx;
++                entry = &gDp83tc812PsfRing[slot];
++                memset(entry, 0, sizeof(*entry));
++                entry->valid = true;
++                entry->psfType = psfType;
++                entry->macPort = macPort;
++                entry->ts64 = Dp83tc812_decodeTs64(payload);
++                entry->storeIndex = gDp83tc812PsfStoreSeq++;
++                if (payloadLen >= 12U)
++                {
++                    const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
++                    entry->seqId = Dp83tc812_readLe16(&payload[8U]);
++                    entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
++                    entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
++                }
++
++                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
++                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
++                if (!wrapped)
++                {
++                    gDp83tc812PsfCount++;
++                }
++
++                EnetUtils_printf(
++                    "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
++                    hPhy->addr,
++                    slot,
++                    entry->storeIndex,
++                    gDp83tc812PsfCount,
++                    wrapped ? 1U : 0U,
++                    (unsigned long long)entry->ts64,
++                    entry->seqId,
++                    entry->msgType,
++                    entry->hash);
++            }
++        }
++        else if (Dp83tc812_isRxPsfType(psfType))
++        {
++            if (payloadLen < 12U)
++            {
++                EnetUtils_printf("PHY %u: phase1 PSF reject RX: payload too short (%u)\r\n",
++                                 hPhy->addr, payloadLen);
++            }
++            else
++            {
++                const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
++
++                slot = gDp83tc812PsfWriteIdx;
++                entry = &gDp83tc812PsfRing[slot];
++                memset(entry, 0, sizeof(*entry));
++                entry->valid = true;
++                entry->psfType = psfType;
++                entry->macPort = macPort;
++                entry->ts64 = Dp83tc812_decodeTs64(payload);
++                entry->seqId = Dp83tc812_readLe16(&payload[8U]);
++                entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
++                entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
++                entry->storeIndex = gDp83tc812PsfStoreSeq++;
++
++                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
++                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
++                if (!wrapped)
++                {
++                    gDp83tc812PsfCount++;
++                }
++
++                EnetUtils_printf(
++                    "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
++                    hPhy->addr,
++                    slot,
++                    entry->storeIndex,
++                    gDp83tc812PsfCount,
++                    wrapped ? 1U : 0U,
++                    (unsigned long long)entry->ts64,
++                    entry->seqId,
++                    entry->msgType,
++                    entry->hash);
++            }
++        }
++        else if (Dp83tc812_isEventPsfType(psfType))
++        {
++            EnetUtils_printf("PHY %u: phase1 PSF drop event type=0x%04x (not handled yet)\r\n",
++                             hPhy->addr, psfType);
++        }
++        else
++        {
++            EnetUtils_printf("PHY %u: phase1 PSF drop unsupported type=0x%04x\r\n",
++                             hPhy->addr, psfType);
++        }
++    }
++
++    return status;
++}
++
+ 
+ /*We only need one master and one slave init script because we are only using one chip revision*/
+ /*! \brief Chip specific init scripts */
+diff --git a/source/networking/enet/core/src/phy/enetphy_priv.h b/source/networking/enet/core/src/phy/enetphy_priv.h
+index 58f66e2..1f85c70 100644
+--- a/source/networking/enet/core/src/phy/enetphy_priv.h
++++ b/source/networking/enet/core/src/phy/enetphy_priv.h
+@@ -199,6 +199,24 @@ typedef struct EnetPhy_Drv_s
+                          uint16_t mask,
+                          uint16_t val);
+ 
++    /*!
++     * \brief Process a received PHY status frame.
++     *
++     * Optional PHY-specific hook used by the PHY IOCTL layer to forward
++     * received status frames into the active PHY backend.
++     *
++     * \param hPhy       PHY device handle
++     * \param macPort    MAC port on which the frame was received
++     * \param frame      Pointer to the received frame bytes
++     * \param frameLen   Frame length in bytes
++     *
++     * \return \ref EnetPhy_ErrorCodes
++     */
++    int32_t (*processStatusFrame)(EnetPhy_Handle hPhy,
++                                  Enet_MacPort macPort,
++                                  const uint8_t *frame,
++                                  uint32_t frameLen);
++
+     /*! Print PHY registers */
+     void (*printRegs)(EnetPhy_Handle hPhy);
+ } EnetPhy_Drv;
