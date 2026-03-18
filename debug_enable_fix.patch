@@ -1,8 +1,8 @@
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
-index 2187f0e..567d655 100644
+index 3d12474..567d655
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
-@@ -164,6 +164,9 @@ static struct dp83tc812_privParams dp83tc812_params = {
+@@ -165,6 +165,9 @@ static struct dp83tc812_privParams dp83tc812_params = {
   *
   * Debug controls:
   * - The ingest path always runs. Only the print volume is controlled here.
@@ -12,17 +12,19 @@ index 2187f0e..567d655 100644
   * - DP83TC812_PSF_DEBUG_PRINT_EVERY_N decimates per-frame prints. A value of 1000
   *   means "print one detailed frame trace every 1000 ingested PSFs".
   * - DP83TC812_PSF_DEBUG_SUMMARY_EVERY_N prints one summary after that many ingested
-@@ -242,7 +245,6 @@ static Dp83tc812_PsfStoreEntry gDp83tc812PsfRing[DP83TC812_PSF_RING_DEPTH];
- static uint32_t gDp83tc812PsfWriteIdx = 0U;
+@@ -242,7 +245,6 @@ static uint32_t gDp83tc812PsfWriteIdx = 0U;
  static uint32_t gDp83tc812PsfCount = 0U;
  static uint32_t gDp83tc812PsfStoreSeq = 0U;
--
+ 
+-#if DP83TC812_PSF_DEBUG_ENABLE
  static uint32_t gDp83tc812PsfIngestCnt = 0U;
  static uint32_t gDp83tc812PsfStoredTxCnt = 0U;
  static uint32_t gDp83tc812PsfStoredRxCnt = 0U;
-@@ -254,17 +256,16 @@ static uint32_t gDp83tc812PsfRejectRxShortCnt = 0U;
+@@ -252,14 +254,17 @@ static uint32_t gDp83tc812PsfRejectTxShortCnt = 0U;
+ static uint32_t gDp83tc812PsfRejectRxShortCnt = 0U;
  static uint32_t gDp83tc812PsfDropEventCnt = 0U;
  static uint32_t gDp83tc812PsfDropUnsupportedCnt = 0U;
+-#endif
  
  static bool Dp83tc812_psfShouldPrintFrame(void)
  {
@@ -38,8 +40,7 @@ index 2187f0e..567d655 100644
      if (printEveryN == 0U)
      {
          printEveryN = 1U;
-     }
-@@ -272,15 +273,16 @@ static bool Dp83tc812_psfShouldPrintFrame(void)
+@@ -268,16 +273,18 @@ static bool Dp83tc812_psfShouldPrintFrame(void)
      shouldPrint = ((gDp83tc812PsfIngestCnt % printEveryN) == 0U);
  
      return shouldPrint;
@@ -62,21 +63,21 @@ index 2187f0e..567d655 100644
      if (summaryEveryN == 0U)
      {
          summaryEveryN = 1U;
-@@ -300,9 +302,6 @@ static void Dp83tc812_psfMaybePrintSummary(EnetPhy_Handle hPhy)
-             gDp83tc812PsfCount,
+@@ -301,9 +308,6 @@ static void Dp83tc812_psfMaybePrintSummary(EnetPhy_Handle hPhy)
              gDp83tc812PsfWriteIdx,
              gDp83tc812PsfStoreSeq);
--    }
+     }
 -#else
 -    ENET_UTILS_UNUSED(hPhy);
-     }
+-#endif
  }
  
-@@ -353,9 +352,10 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+ static uint16_t Dp83tc812_readLe16(const uint8_t *ptr)
+@@ -353,9 +357,10 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
      bool printThisFrame;
      int32_t status = ENETPHY_SOK;
  
--#if DP83TC812_PSF_DEBUG_ENABLE
+-    #if DP83TC812_PSF_DEBUG_ENABLE
 -    gDp83tc812PsfIngestCnt++;
 -#endif
 +    if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
@@ -86,11 +87,11 @@ index 2187f0e..567d655 100644
      printThisFrame = Dp83tc812_psfShouldPrintFrame();
  
      if (printThisFrame)
-@@ -367,13 +367,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -367,29 +372,31 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
      if ((frame == NULL) ||
          (frameLen < (DP83TC812_PSF_ETH_HDR_LEN + DP83TC812_PSF_PTP_HDR_LEN + DP83TC812_PSF_TYPE_LEN)))
      {
--#if DP83TC812_PSF_DEBUG_ENABLE
+-        #if DP83TC812_PSF_DEBUG_ENABLE
 -        gDp83tc812PsfRejectShortCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
@@ -110,11 +111,8 @@ index 2187f0e..567d655 100644
          status = ENETPHY_EBADARGS;
      }
      else if (memcmp(frame, gDp83tc812PsfEthHdr, sizeof(gDp83tc812PsfEthHdr)) != 0)
-@@ -381,13 +382,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-         uint16_t psfType;
-         uint32_t slot;
-         bool wrapped;
--#if DP83TC812_PSF_DEBUG_ENABLE
+     {
+-        #if DP83TC812_PSF_DEBUG_ENABLE
 -        gDp83tc812PsfRejectHdrCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
@@ -133,11 +131,11 @@ index 2187f0e..567d655 100644
          status = ENETPHY_EINVALIDPARAMS;
      }
      else
-@@ -409,13 +411,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -409,16 +416,17 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
          {
              if (payloadLen < 8U)
              {
--#if DP83TC812_PSF_DEBUG_ENABLE
+-                #if DP83TC812_PSF_DEBUG_ENABLE
 -                gDp83tc812PsfRejectTxShortCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
@@ -157,12 +155,11 @@ index 2187f0e..567d655 100644
              }
              else
              {
-@@ -444,18 +447,18 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-                 if (!wrapped)
+@@ -444,12 +452,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
                  {
                      gDp83tc812PsfCount++;
                  }
--#if DP83TC812_PSF_DEBUG_ENABLE
+-                #if DP83TC812_PSF_DEBUG_ENABLE
 -                gDp83tc812PsfStoredTxCnt++;
 -#endif
 +                if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
@@ -176,32 +173,20 @@ index 2187f0e..567d655 100644
 +                    (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
 +                    printThisFrame)
                  {
--                EnetUtils_printf(
--                    "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
--                    hPhy->addr,
--                    slot,
-+                    EnetUtils_printf(
-+                        "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
-+                        hPhy->addr,
-+                        slot,
-                     entry->storeIndex,
-                     gDp83tc812PsfCount,
-                     wrapped ? 1U : 0U,
-@@ -463,7 +466,6 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-                     entry->seqId,
-                     entry->msgType,
-                     entry->hash);
--                }
+                     EnetUtils_printf(
+                         "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
+@@ -463,23 +473,23 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                         entry->msgType,
+                         entry->hash);
+                 }
 -#endif
-+                }
              }
          }
          else if (Dp83tc812_isRxPsfType(psfType))
-@@ -471,13 +473,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
          {
              if (payloadLen < 12U)
              {
--#if DP83TC812_PSF_DEBUG_ENABLE
+-                #if DP83TC812_PSF_DEBUG_ENABLE
 -                gDp83tc812PsfRejectRxShortCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
@@ -221,12 +206,11 @@ index 2187f0e..567d655 100644
              }
              else
              {
-@@ -504,18 +507,18 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-                 if (!wrapped)
+@@ -503,12 +513,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
                  {
                      gDp83tc812PsfCount++;
                  }
--#if DP83TC812_PSF_DEBUG_ENABLE
+-                #if DP83TC812_PSF_DEBUG_ENABLE
 -                gDp83tc812PsfStoredRxCnt++;
 -#endif
 +                if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
@@ -240,29 +224,18 @@ index 2187f0e..567d655 100644
 +                    (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
 +                    printThisFrame)
                  {
--                EnetUtils_printf(
--                    "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
--                    hPhy->addr,
--                    slot,
-+                    EnetUtils_printf(
-+                        "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
-+                        hPhy->addr,
-+                        slot,
-                     entry->storeIndex,
-                     gDp83tc812PsfCount,
-                     wrapped ? 1U : 0U,
-@@ -523,33 +526,32 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-                     entry->seqId,
-                     entry->msgType,
-                     entry->hash);
--                }
+                     EnetUtils_printf(
+                         "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
+@@ -522,34 +534,35 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                         entry->msgType,
+                         entry->hash);
+                 }
 -#endif
-+                }
              }
          }
          else if (Dp83tc812_isEventPsfType(psfType))
          {
--#if DP83TC812_PSF_DEBUG_ENABLE
+-            #if DP83TC812_PSF_DEBUG_ENABLE
 -            gDp83tc812PsfDropEventCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
@@ -282,7 +255,7 @@ index 2187f0e..567d655 100644
          }
          else
          {
--#if DP83TC812_PSF_DEBUG_ENABLE
+-            #if DP83TC812_PSF_DEBUG_ENABLE
 -            gDp83tc812PsfDropUnsupportedCnt++;
 -#endif
 -#if DP83TC812_PSF_DEBUG_ENABLE && DP83TC812_PSF_DEBUG_PRINT_DROPS
