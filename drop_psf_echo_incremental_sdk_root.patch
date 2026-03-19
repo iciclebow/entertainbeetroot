@@ -1,0 +1,68 @@
+diff --git a/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index cfcbfc9..42dbb4d 100644
+--- a/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -63,6 +63,12 @@ static uint8_t gEnetAppTaskStackRx[ENETAPP_TASK_STACK_SZ] __attribute__ ((aligne
+  *   format-inspection runs
+  * - RX_DROP_STATS:
+  *   periodic CPSW drop/error counter logging
++ *
++ * Echo control:
++ * - DROP_PHY_STATUS_FROM_ECHO:
++ *   keeps PHY Status Frames in the RX path so they can still be observed and
++ *   forwarded into the PHY ingest API, but prevents the example's generic echo
++ *   logic from putting those same PSFs back onto the wire.
+  */
+ 
+ /* Set to 1 to include periodic RX frame overview logs in default flow */
+@@ -118,6 +124,10 @@ static uint8_t gEnetAppTaskStackRx[ENETAPP_TASK_STACK_SZ] __attribute__ ((aligne
+ #define ENETAPP_RX_DROP_STATS_INTERVAL_MS          (5000U)
+ #endif
+ 
++#ifndef ENETAPP_DROP_PHY_STATUS_FROM_ECHO
++#define ENETAPP_DROP_PHY_STATUS_FROM_ECHO          (1U)
++#endif
++
+ static void EnetApp_initTxFreePktQ(void);
+ static uint32_t EnetApp_retrieveFreeTxPkts();
+ static void EnetApp_initRxReadyPktQ(EnetDma_RxChHandle hRxCh);
+@@ -628,6 +638,7 @@ static void EnetApp_rxTask(void *args)
+         while (rxPktInfo != NULL)
+         {
+             rxFrame = (EthFrame *)rxPktInfo->sgList.list[0].bufPtr;
++            uint32_t isPhyStatus = 0U;
+             EnetDma_checkPktState(&rxPktInfo->pktState,
+                                     ENET_PKTSTATE_MODULE_APP,
+                                     ENET_PKTSTATE_APP_WITH_DRIVER,
+@@ -651,6 +662,7 @@ static void EnetApp_rxTask(void *args)
+                 if ((psfFrameLen >= sizeof(phyStatusHdr)) &&
+                     (memcmp(psfFrame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
+                 {
++                    isPhyStatus = 1U;
+                     EnetPhy_PtpStatusFrameInArgs inArgs;
+                     Enet_IoctlPrms psfPrms;
+                     Enet_MacPort psfMacPort = ENET_MAC_PORT_1;
+@@ -921,6 +933,23 @@ static void EnetApp_rxTask(void *args)
+             }
+ #endif
+ 
++#if ENETAPP_DROP_PHY_STATUS_FROM_ECHO
++            if (isPhyStatus)
++            {
++                EnetDma_checkPktState(&rxPktInfo->pktState,
++                                      ENET_PKTSTATE_MODULE_APP,
++                                      ENET_PKTSTATE_APP_WITH_READYQ,
++                                      ENET_PKTSTATE_APP_WITH_FREEQ);
++
++                /* Keep PSFs in the RX path for ingest/debug, but do not echo
++                 * them back onto the link through the example's generic echo
++                 * transmit path. */
++                EnetQueue_enq(&rxFreeQ, &rxPktInfo->node);
++                rxPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&rxReadyQ);
++                continue;
++            }
++#endif
++
+             /* Retrieve TX packets from driver and recycle them */
+             EnetApp_retrieveFreeTxPkts();
+ 
