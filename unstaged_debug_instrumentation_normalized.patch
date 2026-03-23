@@ -1,0 +1,877 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
+index 422e6d0..4135dba 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
+@@ -36,6 +36,9 @@
+ #include <tsn_combase/combase.h>
+ #include <nrt_flow/dataflow.h>
+ 
++#ifndef ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB
++#define ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB   (1U)
++#endif
+ 
+ int EnetApp_lldCfgUpdateCb(cb_socket_lldcfg_update_t *update_cfg)
+ {
+@@ -47,11 +50,19 @@ int EnetApp_lldCfgUpdateCb(cb_socket_lldcfg_update_t *update_cfg)
+         update_cfg->nTxPkts = ENET_DMA_TX_CH_PTP_NUM_PKTS;
+         update_cfg->nRxPkts[0] = ENET_DMA_RX_CH_PTP_NUM_PKTS;
+         update_cfg->pktSize = ENET_MEM_LARGE_POOL_PKT_SIZE;
+-        /* PSF Debug: also enable default callback on PTP RX channel for unmatched traffic */
++#if ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB
++        /* Diagnostic hook: share the PTP RX owner channel and mirror unmatched
++         * traffic into the default callback for visibility. */
+         update_cfg->dmaRxShared = true;
+         update_cfg->dmaRxOwner = true;
+         update_cfg->rxDefaultDataCb = rxDefaultDataCb;
+         update_cfg->rxDefaultCbArg = NULL;
++#else
++        update_cfg->dmaRxShared = false;
++        update_cfg->dmaRxOwner = true;
++        update_cfg->rxDefaultDataCb = NULL;
++        update_cfg->rxDefaultCbArg = NULL;
++#endif
+     }
+     return 0;
+ }
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_init.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_init.c
+index 10c4dd5..19a32d1 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_init.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_init.c
+@@ -147,10 +147,15 @@ static EnetApp_DbNameVal_t gGptpDefaultDsRo[] =
+     {"ptp-timescale", "true"},
+ };
+ 
++#ifndef ENETAPP_GPTP_STATIC_SLAVE_PORT
++#define ENETAPP_GPTP_STATIC_SLAVE_PORT            (-1)
++#endif
++
+ static EnetApp_DbIntVal_t gGptpNonYangDs[] =
+ {
+     {"SINGLE_CLOCK_MODE", XL4_EXTMOD_XL4GPTP_SINGLE_CLOCK_MODE, 1},
+     {"USE_HW_PHASE_ADJUSTMENT", XL4_EXTMOD_XL4GPTP_USE_HW_PHASE_ADJUSTMENT, 1},
++    {"STATIC_PORT_STATE_SLAVE_PORT", XL4_EXTMOD_XL4GPTP_STATIC_PORT_STATE_SLAVE_PORT, ENETAPP_GPTP_STATIC_SLAVE_PORT},
+     {"CLOCK_COMPUTE_INTERVAL_MSEC", XL4_EXTMOD_XL4GPTP_CLOCK_COMPUTE_INTERVAL_MSEC, 100},
+     {"FREQ_OFFSET_IIR_ALPHA_START_VALUE", XL4_EXTMOD_XL4GPTP_FREQ_OFFSET_IIR_ALPHA_START_VALUE, 1},
+     {"FREQ_OFFSET_IIR_ALPHA_STABLE_VALUE", XL4_EXTMOD_XL4GPTP_FREQ_OFFSET_IIR_ALPHA_STABLE_VALUE, 4},
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index cfcbfc9..85c29a9 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -63,6 +63,12 @@ static uint8_t gEnetAppTaskStackRx[ENETAPP_TASK_STACK_SZ] __attribute__ ((aligne
+  *   format-inspection runs
+  * - RX_DROP_STATS:
+  *   periodic CPSW drop/error counter logging
++ *
++ * Echo control:
++ * - DROP_PHY_STATUS_FROM_ECHO:
++ *   keeps PHY Status Frames in the RX path so they can still be observed and
++ *   forwarded into the PHY ingest API, but prevents the example's generic echo
++ *   logic from putting those same PSFs back onto the wire.
+  */
+ 
+ /* Set to 1 to include periodic RX frame overview logs in default flow */
+@@ -118,13 +124,115 @@ static uint8_t gEnetAppTaskStackRx[ENETAPP_TASK_STACK_SZ] __attribute__ ((aligne
+ #define ENETAPP_RX_DROP_STATS_INTERVAL_MS          (5000U)
+ #endif
+ 
++#ifndef ENETAPP_DROP_PHY_STATUS_FROM_ECHO
++#define ENETAPP_DROP_PHY_STATUS_FROM_ECHO          (1U)
++#endif
++
++/* Set to 1 to add first-N tracing for PTP frames seen in default-flow RX paths. */
++#ifndef ENETAPP_ENABLE_PTP_PATH_DEBUG
++#define ENETAPP_ENABLE_PTP_PATH_DEBUG              (0U)
++#endif
++
++/* Maximum number of detailed PTP frame traces printed per RX path. */
++#ifndef ENETAPP_PTP_PATH_DEBUG_FIRST_N
++#define ENETAPP_PTP_PATH_DEBUG_FIRST_N             (10U)
++#endif
++
++/* Set to 0 to make the default RX task observe-and-recycle only. */
++#ifndef ENETAPP_ENABLE_DEFAULT_RX_ECHO
++#define ENETAPP_ENABLE_DEFAULT_RX_ECHO             (1U)
++#endif
++
+ static void EnetApp_initTxFreePktQ(void);
+ static uint32_t EnetApp_retrieveFreeTxPkts();
+ static void EnetApp_initRxReadyPktQ(EnetDma_RxChHandle hRxCh);
+ static void EnetApp_printRxDropStats(void);
++static uint16_t EnetApp_getEthType(const uint8_t *frame,
++                                   uint32_t frameLen,
++                                   uint32_t *l2HdrLen);
++static uint8_t EnetApp_getPtpMsgType(const uint8_t *frame,
++                                     uint32_t frameLen,
++                                     uint32_t l2HdrLen,
++                                     uint16_t *seqId);
++static const char *EnetApp_getPtpMsgTypeName(uint8_t msgType);
+ 
+ void rxDefaultDataCb(void *data, int size, int port, void *cbArg);
+ 
++static uint16_t EnetApp_getEthType(const uint8_t *frame,
++                                   uint32_t frameLen,
++                                   uint32_t *l2HdrLen)
++{
++    uint16_t ethType = 0U;
++    uint32_t hdrLen = 14U;
++
++    if ((frame == NULL) || (frameLen < hdrLen))
++    {
++        if (l2HdrLen != NULL)
++        {
++            *l2HdrLen = 0U;
++        }
++        return 0U;
++    }
++
++    ethType = ((uint16_t)frame[12U] << 8U) | frame[13U];
++    while (((ethType == 0x8100U) || (ethType == 0x88A8U)) &&
++           (frameLen >= (hdrLen + 4U)))
++    {
++        hdrLen += 4U;
++        ethType = ((uint16_t)frame[hdrLen - 2U] << 8U) | frame[hdrLen - 1U];
++    }
++
++    if (l2HdrLen != NULL)
++    {
++        *l2HdrLen = hdrLen;
++    }
++
++    return ethType;
++}
++
++static uint8_t EnetApp_getPtpMsgType(const uint8_t *frame,
++                                     uint32_t frameLen,
++                                     uint32_t l2HdrLen,
++                                     uint16_t *seqId)
++{
++    uint8_t msgType = 0xFFU;
++
++    if ((frame != NULL) && (frameLen > l2HdrLen))
++    {
++        msgType = frame[l2HdrLen] & 0x0FU;
++    }
++
++    if (seqId != NULL)
++    {
++        *seqId = 0xFFFFU;
++        if ((frame != NULL) && (frameLen >= (l2HdrLen + 32U)))
++        {
++            *seqId = ((uint16_t)frame[l2HdrLen + 30U] << 8U) |
++                     frame[l2HdrLen + 31U];
++        }
++    }
++
++    return msgType;
++}
++
++static const char *EnetApp_getPtpMsgTypeName(uint8_t msgType)
++{
++    switch (msgType)
++    {
++        case 0x0U: return "sync";
++        case 0x1U: return "delay_req";
++        case 0x2U: return "pdelay_req";
++        case 0x3U: return "pdelay_resp";
++        case 0x8U: return "follow_up";
++        case 0x9U: return "delay_resp";
++        case 0xAU: return "pdelay_resp_fup";
++        case 0xBU: return "announce";
++        case 0xCU: return "signaling";
++        case 0xDU: return "management";
++        default:   return "other";
++    }
++}
++
+ #if ENETAPP_ENABLE_RX_DROP_STATS
+ /* ======================= PSF Debug: drop-stat visibility ======================= */
+ static void EnetApp_printRxDropStats(void)
+@@ -186,6 +294,78 @@ static void EnetApp_printRxDropStats(void)
+ /* ======================= PSF Debug: PTP RX default callback ======================= */
+ void rxDefaultDataCb(void *data, int size, int port, void *cbArg)
+ {
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++    static uint32_t cbTraceTotal = 0U;
++    static uint32_t cbTracePhyStatus = 0U;
++    static uint32_t cbTracePtpNonPsf = 0U;
++    static uint32_t cbTraceOther = 0U;
++    static uint32_t cbTraceFirstNLogs = 0U;
++    static uint32_t cbTraceLastPrintTimeMs = 0U;
++    static const uint8_t phyStatusHdr[14U] = {
++        0x01, 0x1B, 0x19, 0x00, 0x00, 0x00,
++        0x08, 0x00, 0x17, 0x0B, 0x6B, 0x0F,
++        0x88, 0xF7,
++    };
++    const uint8_t *frame = (const uint8_t *)data;
++    const uint32_t frameLen = (uint32_t)size;
++    const uint32_t nowMs = ClockP_getTimeUsec() / 1000U;
++    uint32_t l2HdrLen = 0U;
++    uint16_t ethType = 0U;
++
++    cbTraceTotal++;
++    if ((frameLen >= sizeof(phyStatusHdr)) &&
++        (memcmp(frame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
++    {
++        cbTracePhyStatus++;
++    }
++    else
++    {
++        ethType = EnetApp_getEthType(frame, frameLen, &l2HdrLen);
++        if (ethType == 0x88F7U)
++        {
++            uint16_t seqId = 0xFFFFU;
++            uint8_t msgType = EnetApp_getPtpMsgType(frame, frameLen, l2HdrLen, &seqId);
++
++            cbTracePtpNonPsf++;
++            if (cbTraceFirstNLogs < ENETAPP_PTP_PATH_DEBUG_FIRST_N)
++            {
++                cbTraceFirstNLogs++;
++                EnetAppUtils_print(
++                    "%s: shared-rx default-cb PTP[%u] port=%d len=%u dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x type=%s(0x%02x) seqId=%u\r\n",
++                    gEnetAppCfg.name,
++                    cbTraceFirstNLogs,
++                    port,
++                    frameLen,
++                    frame[0U], frame[1U], frame[2U], frame[3U], frame[4U], frame[5U],
++                    frame[6U], frame[7U], frame[8U], frame[9U], frame[10U], frame[11U],
++                    EnetApp_getPtpMsgTypeName(msgType),
++                    msgType,
++                    seqId);
++            }
++        }
++        else
++        {
++            cbTraceOther++;
++        }
++    }
++
++    if (cbTraceLastPrintTimeMs == 0U)
++    {
++        cbTraceLastPrintTimeMs = nowMs;
++    }
++    else if ((nowMs - cbTraceLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
++    {
++        EnetAppUtils_print(
++            "%s: shared-rx default-cb summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u\r\n",
++            gEnetAppCfg.name,
++            cbTraceTotal,
++            cbTracePhyStatus,
++            cbTracePtpNonPsf,
++            cbTraceOther);
++        cbTraceLastPrintTimeMs = nowMs;
++    }
++#endif
++
+ #if ENETAPP_ENABLE_RX_FRAME_DEBUG
+     static uint32_t total = 0U;
+     static uint32_t phyStatus = 0U;
+@@ -590,9 +770,7 @@ static void EnetApp_rxTask(void *args)
+     EnetDma_PktQ rxFreeQ;
+     EnetDma_PktQ txSubmitQ;
+     EnetDma_Pkt *rxPktInfo;
+-    EnetDma_Pkt *txPktInfo;
+     EthFrame *rxFrame;
+-    EthFrame *txFrame;
+     uint32_t totalRxCnt = 0U;
+     int32_t status = ENET_SOK;
+ 
+@@ -628,6 +806,26 @@ static void EnetApp_rxTask(void *args)
+         while (rxPktInfo != NULL)
+         {
+             rxFrame = (EthFrame *)rxPktInfo->sgList.list[0].bufPtr;
++            uint32_t isPhyStatus = 0U;
++            uint32_t frameLen = rxPktInfo->sgList.list[0].segmentFilledLen;
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++            static uint32_t dbgTotal = 0U;
++            static uint32_t dbgPhyStatus = 0U;
++            static uint32_t dbgPtpNonPsf = 0U;
++            static uint32_t dbgOther = 0U;
++            static uint32_t dbgPtpEchoed = 0U;
++            static uint32_t dbgPtpDropped = 0U;
++            static uint32_t dbgPtpNoTxPkt = 0U;
++            static uint32_t dbgFirstNLogs = 0U;
++            static uint32_t dbgLastPrintTimeMs = 0U;
++            uint32_t dbgL2HdrLen = 0U;
++            uint16_t dbgEthType = 0U;
++            uint16_t dbgSeqId = 0xFFFFU;
++            uint8_t dbgMsgType = 0xFFU;
++            uint32_t isNonPsfPtp = 0U;
++            const uint32_t nowMs = ClockP_getTimeUsec() / 1000U;
++            const char *ptpAction = "n/a";
++#endif
+             EnetDma_checkPktState(&rxPktInfo->pktState,
+                                     ENET_PKTSTATE_MODULE_APP,
+                                     ENET_PKTSTATE_APP_WITH_DRIVER,
+@@ -651,6 +849,7 @@ static void EnetApp_rxTask(void *args)
+                 if ((psfFrameLen >= sizeof(phyStatusHdr)) &&
+                     (memcmp(psfFrame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
+                 {
++                    isPhyStatus = 1U;
+                     EnetPhy_PtpStatusFrameInArgs inArgs;
+                     Enet_IoctlPrms psfPrms;
+                     Enet_MacPort psfMacPort = ENET_MAC_PORT_1;
+@@ -680,6 +879,31 @@ static void EnetApp_rxTask(void *args)
+                 }
+             }
+ 
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++            dbgTotal++;
++            if (isPhyStatus)
++            {
++                dbgPhyStatus++;
++            }
++            else
++            {
++                dbgEthType = EnetApp_getEthType((const uint8_t *)rxFrame, frameLen, &dbgL2HdrLen);
++                if (dbgEthType == 0x88F7U)
++                {
++                    isNonPsfPtp = 1U;
++                    dbgPtpNonPsf++;
++                    dbgMsgType = EnetApp_getPtpMsgType((const uint8_t *)rxFrame,
++                                                       frameLen,
++                                                       dbgL2HdrLen,
++                                                       &dbgSeqId);
++                }
++                else
++                {
++                    dbgOther++;
++                }
++            }
++#endif
++
+ #if ENETAPP_ENABLE_RX_FRAME_DEBUG
+             {
+                 /* ======================= PSF Debug: default RX flow ======================= */
+@@ -921,43 +1145,132 @@ static void EnetApp_rxTask(void *args)
+             }
+ #endif
+ 
++#if ENETAPP_DROP_PHY_STATUS_FROM_ECHO
++            if (isPhyStatus)
++            {
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++                ptpAction = "drop-phy-status";
++#endif
++                EnetDma_checkPktState(&rxPktInfo->pktState,
++                                      ENET_PKTSTATE_MODULE_APP,
++                                      ENET_PKTSTATE_APP_WITH_READYQ,
++                                      ENET_PKTSTATE_APP_WITH_FREEQ);
++
++                /* Keep PSFs in the RX path for ingest/debug, but do not echo
++                 * them back onto the link through the example's generic echo
++                 * transmit path. */
++                EnetQueue_enq(&rxFreeQ, &rxPktInfo->node);
++                rxPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&rxReadyQ);
++                continue;
++            }
++#endif
++
++#if ENETAPP_ENABLE_DEFAULT_RX_ECHO
+             /* Retrieve TX packets from driver and recycle them */
+             EnetApp_retrieveFreeTxPkts();
+ 
+             /* Dequeue one free TX Eth packet */
+-            txPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&gEnetAppCfg.txFreePktInfoQ);
+-            if (txPktInfo != NULL)
+             {
+-                /* Fill the TX Eth frame with test content */
+-                txFrame = (EthFrame *)txPktInfo->sgList.list[0].bufPtr;
+-                memcpy(txFrame->hdr.dstMac, rxFrame->hdr.srcMac, ENET_MAC_ADDR_LEN);
+-                memcpy(txFrame->hdr.srcMac, &gEnetAppCfg.macAddr[0U], ENET_MAC_ADDR_LEN);
+-                txFrame->hdr.etherType = rxFrame->hdr.etherType;
+-
+-                txPktInfo->sgList.list[0].segmentFilledLen = rxPktInfo->sgList.list[0].segmentFilledLen;
+-                EnetAppUtils_assert(txPktInfo->sgList.list[0].segmentAllocLen >= txPktInfo->sgList.list[0].segmentFilledLen);
+-                memcpy(&txFrame->payload[0U],
+-                        &rxFrame->payload[0U],
+-                        rxPktInfo->sgList.list[0].segmentFilledLen - sizeof(EthFrameHeader));
+-
+-                txPktInfo->sgList.numScatterSegments = 1;
+-                txPktInfo->chkSumInfo = 0U;
+-                txPktInfo->appPriv = &gEnetAppCfg;
+-                txPktInfo->tsInfo.enableHostTxTs = false;
+-
+-                EnetDma_checkPktState(&txPktInfo->pktState,
+-                                        ENET_PKTSTATE_MODULE_APP,
+-                                        ENET_PKTSTATE_APP_WITH_FREEQ,
+-                                        ENET_PKTSTATE_APP_WITH_DRIVER);
+-
+-                /* Enqueue the packet for later transmission */
+-                EnetQueue_enq(&txSubmitQ, &txPktInfo->node);
++                EnetDma_Pkt *txPktInfo;
++                EthFrame *txFrame;
++
++                txPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&gEnetAppCfg.txFreePktInfoQ);
++                if (txPktInfo != NULL)
++                {
++                    /* Fill the TX Eth frame with test content */
++                    txFrame = (EthFrame *)txPktInfo->sgList.list[0].bufPtr;
++                    memcpy(txFrame->hdr.dstMac, rxFrame->hdr.srcMac, ENET_MAC_ADDR_LEN);
++                    memcpy(txFrame->hdr.srcMac, &gEnetAppCfg.macAddr[0U], ENET_MAC_ADDR_LEN);
++                    txFrame->hdr.etherType = rxFrame->hdr.etherType;
++
++                    txPktInfo->sgList.list[0].segmentFilledLen = rxPktInfo->sgList.list[0].segmentFilledLen;
++                    EnetAppUtils_assert(txPktInfo->sgList.list[0].segmentAllocLen >= txPktInfo->sgList.list[0].segmentFilledLen);
++                    memcpy(&txFrame->payload[0U],
++                            &rxFrame->payload[0U],
++                            rxPktInfo->sgList.list[0].segmentFilledLen - sizeof(EthFrameHeader));
++
++                    txPktInfo->sgList.numScatterSegments = 1;
++                    txPktInfo->chkSumInfo = 0U;
++                    txPktInfo->appPriv = &gEnetAppCfg;
++                    txPktInfo->tsInfo.enableHostTxTs = false;
++
++                    EnetDma_checkPktState(&txPktInfo->pktState,
++                                            ENET_PKTSTATE_MODULE_APP,
++                                            ENET_PKTSTATE_APP_WITH_FREEQ,
++                                            ENET_PKTSTATE_APP_WITH_DRIVER);
++
++                    /* Enqueue the packet for later transmission */
++                    EnetQueue_enq(&txSubmitQ, &txPktInfo->node);
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++                    if (isNonPsfPtp)
++                    {
++                        dbgPtpEchoed++;
++                        ptpAction = "echo";
++                    }
++#endif
++                }
++                else
++                {
++                    EnetAppUtils_print("%s: Drop due to TX pkt not available\r\n", gEnetAppCfg.name);
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++                    if (isNonPsfPtp)
++                    {
++                        dbgPtpNoTxPkt++;
++                        ptpAction = "drop-no-tx-pkt";
++                    }
++#endif
++                }
+             }
+-            else
++#else
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++            if (isNonPsfPtp)
++            {
++                dbgPtpDropped++;
++                ptpAction = "drop-echo-disabled";
++            }
++#endif
++#endif
++
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++            if (isNonPsfPtp && (dbgFirstNLogs < ENETAPP_PTP_PATH_DEBUG_FIRST_N))
+             {
+-                EnetAppUtils_print("%s: Drop due to TX pkt not available\r\n", gEnetAppCfg.name);
++                dbgFirstNLogs++;
++                EnetAppUtils_print(
++                    "%s: default-flow PTP[%u] len=%u dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x type=%s(0x%02x) seqId=%u action=%s\r\n",
++                    gEnetAppCfg.name,
++                    dbgFirstNLogs,
++                    frameLen,
++                    rxFrame->hdr.dstMac[0U], rxFrame->hdr.dstMac[1U], rxFrame->hdr.dstMac[2U],
++                    rxFrame->hdr.dstMac[3U], rxFrame->hdr.dstMac[4U], rxFrame->hdr.dstMac[5U],
++                    rxFrame->hdr.srcMac[0U], rxFrame->hdr.srcMac[1U], rxFrame->hdr.srcMac[2U],
++                    rxFrame->hdr.srcMac[3U], rxFrame->hdr.srcMac[4U], rxFrame->hdr.srcMac[5U],
++                    EnetApp_getPtpMsgTypeName(dbgMsgType),
++                    dbgMsgType,
++                    dbgSeqId,
++                    ptpAction);
+             }
+ 
++            if (dbgLastPrintTimeMs == 0U)
++            {
++                dbgLastPrintTimeMs = nowMs;
++            }
++            else if ((nowMs - dbgLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
++            {
++                EnetAppUtils_print(
++                    "%s: default-flow summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpDropped=%u ptpNoTx=%u echoEnabled=%u\r\n",
++                    gEnetAppCfg.name,
++                    dbgTotal,
++                    dbgPhyStatus,
++                    dbgPtpNonPsf,
++                    dbgOther,
++                    dbgPtpEchoed,
++                    dbgPtpDropped,
++                    dbgPtpNoTxPkt,
++                    ENETAPP_ENABLE_DEFAULT_RX_ECHO);
++                dbgLastPrintTimeMs = nowMs;
++            }
++#endif
++
+             EnetDma_checkPktState(&rxPktInfo->pktState,
+                                     ENET_PKTSTATE_MODULE_APP,
+                                     ENET_PKTSTATE_APP_WITH_READYQ,
+@@ -970,12 +1283,14 @@ static void EnetApp_rxTask(void *args)
+ 
+         EnetApp_printRxDropStats();
+ 
++#if ENETAPP_ENABLE_DEFAULT_RX_ECHO
+         /* Transmit all enqueued packets */
+         status = EnetDma_submitTxPktQ(gEnetAppCfg.hTxCh, &txSubmitQ);
+         if (status != ENET_SOK)
+         {
+             EnetAppUtils_print("%s: Failed to submit TX pkt queue: %d\r\n", gEnetAppCfg.name, status);
+         }
++#endif
+ 
+         EnetAppUtils_validatePacketState(&rxFreeQ,
+                                             ENET_PKTSTATE_APP_WITH_FREEQ,
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+index f6294c5..dc010cf 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+@@ -55,6 +55,14 @@
+ #include "combase_private.h"
+ #include "lldenetext.h"
+ 
++#ifndef LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
++#define LLDENET_ENABLE_PTP_RX_OWNER_DEBUG         (0)
++#endif
++
++#ifndef LLDENET_PTP_RX_OWNER_DEBUG_FIRST_N
++#define LLDENET_PTP_RX_OWNER_DEBUG_FIRST_N        (10U)
++#endif
++
+ extern int32_t EnetApp_filterPriorityPacketsCfg(Enet_Handle hEnet, uint32_t coreId);
+ extern int32_t EnetApp_applyClassifier(Enet_Handle hEnet, uint32_t coreId, uint8_t *dstMacAddr, uint32_t vlanId,
+ 										uint32_t ethType, uint32_t rxFlowIdx);
+@@ -82,6 +90,110 @@ static LLDEnetRxDma_t *LLDEnetGetRxDma(int rxChId)
+ 	return &s_lldRxDmaTable[rxChId];
+ }
+ 
++#if LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
++static uint32_t gLldEnetPtpRxOwnerTraceCount = 0U;
++
++static uint16_t LLDEnetDbgGetEthType(const uint8_t *frame, int size, uint32_t *l2HdrLen)
++{
++	uint16_t ethType = 0U;
++	uint32_t hdrLen = 14U;
++
++	if ((frame == NULL) || (size < (int)hdrLen)) {
++		if (l2HdrLen != NULL) {
++			*l2HdrLen = 0U;
++		}
++		return 0U;
++	}
++
++	ethType = ((uint16_t)frame[12] << 8U) | frame[13];
++	while (((ethType == 0x8100U) || (ethType == 0x88A8U)) &&
++		   (size >= (int)(hdrLen + 4U))) {
++		hdrLen += 4U;
++		ethType = ((uint16_t)frame[hdrLen - 2U] << 8U) | frame[hdrLen - 1U];
++	}
++
++	if (l2HdrLen != NULL) {
++		*l2HdrLen = hdrLen;
++	}
++	return ethType;
++}
++
++static uint8_t LLDEnetDbgGetPtpMsgType(const uint8_t *frame, int size,
++									   uint32_t l2HdrLen, uint16_t *seqId)
++{
++	uint8_t msgType = 0xFFU;
++
++	if ((frame != NULL) && (size > (int)l2HdrLen)) {
++		msgType = frame[l2HdrLen] & 0x0FU;
++	}
++
++	if (seqId != NULL) {
++		*seqId = 0xFFFFU;
++		if ((frame != NULL) && (size >= (int)(l2HdrLen + 32U))) {
++			*seqId = ((uint16_t)frame[l2HdrLen + 30U] << 8U) |
++					 frame[l2HdrLen + 31U];
++		}
++	}
++
++	return msgType;
++}
++
++static void LLDEnetDbgTracePtpRoute(const char *stage,
++									LLDEnetRxDma_t *hLLDRxDma,
++									const void *buf,
++									int size,
++									uint8_t portNum,
++									int subRxIndex)
++{
++	const uint8_t *frame = (const uint8_t *)buf;
++	uint32_t l2HdrLen = 0U;
++	uint16_t ethType = 0U;
++	uint16_t seqId = 0xFFFFU;
++	uint8_t msgType = 0xFFU;
++
++	if (gLldEnetPtpRxOwnerTraceCount >= LLDENET_PTP_RX_OWNER_DEBUG_FIRST_N) {
++		return;
++	}
++
++	ethType = LLDEnetDbgGetEthType(frame, size, &l2HdrLen);
++	if (ethType != ETH_P_1588) {
++		return;
++	}
++
++	msgType = LLDEnetDbgGetPtpMsgType(frame, size, l2HdrLen, &seqId);
++	gLldEnetPtpRxOwnerTraceCount++;
++	UB_LOG(UBL_INFO,
++		   "%s: stage=%s trace=%u rxChId=%d shared=%d subRx=%d port=%u size=%d type=0x%02x seqId=%u dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x\n",
++		   __func__,
++		   stage,
++		   gLldEnetPtpRxOwnerTraceCount,
++		   hLLDRxDma->rxChId,
++		   hLLDRxDma->dmaRxShared,
++		   subRxIndex,
++		   portNum,
++		   size,
++		   msgType,
++		   seqId,
++		   frame[0], frame[1], frame[2], frame[3], frame[4], frame[5],
++		   frame[6], frame[7], frame[8], frame[9], frame[10], frame[11]);
++}
++#else
++static void LLDEnetDbgTracePtpRoute(const char *stage,
++									LLDEnetRxDma_t *hLLDRxDma,
++									const void *buf,
++									int size,
++									uint8_t portNum,
++									int subRxIndex)
++{
++	(void)stage;
++	(void)hLLDRxDma;
++	(void)buf;
++	(void)size;
++	(void)portNum;
++	(void)subRxIndex;
++}
++#endif
++
+ /* This function is called inside the protected function to
+  * protect hLLDRxDma->nSubRx from concurrent update */
+ static int LLDEnetSetRxDmaCfg(LLDEnet_t *hLLDEnet, LLDEnetCfg_t *cfg)
+@@ -109,6 +221,16 @@ static int LLDEnetSetRxDmaCfg(LLDEnet_t *hLLDEnet, LLDEnetCfg_t *cfg)
+ 			hLLDRxDma->dmaRxShared = cfg->dmaRxShared;
+ 			UB_LOG(UBL_INFO,"rxChId %d has owner dmaRxShared %d\n",
+ 				   hLLDRxDma->rxChId, hLLDRxDma->dmaRxShared);
++#if LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
++			UB_LOG(UBL_INFO,
++				   "%s: owner-open rxChId=%d shared=%d nRxPkts=%u pktSize=%u defaultCb=%p\n",
++				   __func__,
++				   hLLDRxDma->rxChId,
++				   hLLDRxDma->dmaRxShared,
++				   hLLDRxDma->nRxPkts,
++				   hLLDRxDma->pktSize,
++				   (void *)cfg->rxDefaultDataCb);
++#endif
+ 		} else {
+ 			if (!hLLDRxDma->dmaRxShared) {
+ 				UB_LOG(UBL_ERROR,"rxChId %d is not shared by owner\n",
+@@ -127,6 +249,14 @@ static int LLDEnetSetRxDmaCfg(LLDEnet_t *hLLDEnet, LLDEnetCfg_t *cfg)
+ 
+ 			UB_LOG(UBL_INFO,"subRxIndex %d reused rxChId %d dmaRxShared %d\n",
+ 				   subRx->subRxIndex, hLLDRxDma->rxChId, hLLDRxDma->dmaRxShared);
++#if LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
++			UB_LOG(UBL_INFO,
++				   "%s: subrx-open subRxIndex=%d rxChId=%d shared=%d\n",
++				   __func__,
++				   subRx->subRxIndex,
++				   hLLDRxDma->rxChId,
++				   hLLDRxDma->dmaRxShared);
++#endif
+ 
+ 			hLLDRxDma->nSubRx++;
+ 		}
+@@ -706,6 +836,8 @@ static int LLDEnetPushFrameToMatchedSubRx(LLDEnetRxDma_t *hLLDRxDma, int portNum
+ 			pktBuf.size = size;
+ 			pktBuf.port = portNum;
+ 			pktBuf.rxts = rxts;
++			LLDEnetDbgTracePtpRoute("subrx-match", hLLDRxDma, buf, size, portNum,
++								   subRx->subRxIndex);
+ 			if (BufRingPush(&subRx->bufRing, &pktBuf)) {
+ 				if (subRx->rxNotifyCb) {
+ 					subRx->rxNotifyCb(subRx->rxCbArg);
+@@ -719,6 +851,7 @@ static int LLDEnetPushFrameToMatchedSubRx(LLDEnetRxDma_t *hLLDRxDma, int portNum
+ 
+ 	/* Not matched any SubRx */
+ 	if ((i == hLLDRxDma->nSubRx) && (hLLDRxDma->rxDefaultDataCb)) {
++		LLDEnetDbgTracePtpRoute("default-cb", hLLDRxDma, buf, size, portNum, -1);
+ 		hLLDRxDma->rxDefaultDataCb(buf, size, portNum, hLLDRxDma->rxDefaultCbArg);
+ 	}
+ 
+@@ -811,6 +944,8 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 
+ 	if ((hLLDRxDma->dmaRxShared == false) ||
+ 		IsRxFrameForDmaOwner(hLLDRxDma, rxFrame, pktSize)) {
++		LLDEnetDbgTracePtpRoute("owner-accept", hLLDRxDma, rxFrame, pktSize,
++							   (uint8_t)pktInfo->rxPortNum, -1);
+ 		if (LLDEnetRecvCb != NULL) { /* zero-copy */
+ 			LLDEnetFrame_t tmpFrame;
+ 			memset(&tmpFrame, 0, sizeof(tmpFrame));
+@@ -832,6 +967,8 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 	} else {
+ 		/* only happens when the dmaRxShared = true and this function
+ 		 * is called by owner */
++		LLDEnetDbgTracePtpRoute("owner-defer", hLLDRxDma, rxFrame, pktSize,
++							   (uint8_t)pktInfo->rxPortNum, -1);
+ 		LLDEnetPushFrameToMatchedSubRx(hLLDRxDma, pktInfo->rxPortNum, rxFrame,
+ 				pktInfo->sgList.list[0].segmentFilledLen, pktInfo->tsInfo.rxPktTs);
+ 		res = LLDENET_E_NOMATCH;
+@@ -1009,6 +1146,14 @@ int LLDEnetSetDefaultRxDataCb(LLDEnet_t *hLLDEnet,
+ 		}
+ 		hLLDRxDma->rxDefaultDataCb = rxDefaultDataCb;
+ 		hLLDRxDma->rxDefaultCbArg = arg;
++#if LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
++		UB_LOG(UBL_INFO,
++			   "%s: rxChId=%d defaultRxCb=%p arg=%p\n",
++			   __func__,
++			   hLLDRxDma->rxChId,
++			   (void *)rxDefaultDataCb,
++			   arg);
++#endif
+ 	}
+ 
+ 	return LLDENET_E_OK;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+index 1d3e33d..5e5ad3f 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+@@ -80,6 +80,14 @@ typedef struct {
+ 	uint8_t pdata[GPTP_MAX_PACKET_SIZE];
+ } __attribute__((packed)) ptpkt_t;
+ 
++#ifndef LLD_GPTPNET_ENABLE_RX_DEBUG
++#define LLD_GPTPNET_ENABLE_RX_DEBUG              (0)
++#endif
++
++#ifndef LLD_GPTPNET_RX_DEBUG_FIRST_N
++#define LLD_GPTPNET_RX_DEBUG_FIRST_N             (10U)
++#endif
++
+ typedef struct netdevice {
+ 	ptpkt_t txbuf;
+ 	event_data_netlink_t nlstatus;
+@@ -103,6 +111,114 @@ struct gptpnet_data {
+ 	uint8_t gptpInstanceIndex;
+ };
+ 
++#if LLD_GPTPNET_ENABLE_RX_DEBUG
++typedef struct {
++	uint32_t sync;
++	uint32_t followUp;
++	uint32_t pdelayReq;
++	uint32_t pdelayResp;
++	uint32_t pdelayRespFollowUp;
++	uint32_t other;
++	uint32_t firstNLogs;
++	int64_t lastPrintTs64;
++} gptpnet_rx_debug_t;
++
++static gptpnet_rx_debug_t gGptpnetRxDebug;
++
++static void gptpnet_dbg_trace_rx(uint8_t *buf,
++								   int size,
++								   int macport,
++								   int ndev_index,
++								   int seqid,
++								   event_data_recv_t *edtrecv,
++								   uint64_t eventTs64)
++{
++	const uint8_t *ptp = buf + ETH_HLEN;
++	const uint8_t *srcId = &ptp[20];
++	const char *msg = "other";
++	const uint8_t *reqId = NULL;
++	uint16_t reqPort = 0U;
++
++	switch (edtrecv->msgtype) {
++		case SYNC:
++			gGptpnetRxDebug.sync++;
++			break;
++		case FOLLOW_UP:
++			gGptpnetRxDebug.followUp++;
++			break;
++		case PDELAY_REQ:
++			gGptpnetRxDebug.pdelayReq++;
++			break;
++		case PDELAY_RESP:
++			gGptpnetRxDebug.pdelayResp++;
++			if (size >= (ETH_HLEN + 54)) {
++				reqId = &ptp[44];
++				reqPort = ((uint16_t)ptp[52] << 8U) | ptp[53];
++			}
++			break;
++		case PDELAY_RESP_FOLLOW_UP:
++			gGptpnetRxDebug.pdelayRespFollowUp++;
++			if (size >= (ETH_HLEN + 54)) {
++				reqId = &ptp[44];
++				reqPort = ((uint16_t)ptp[52] << 8U) | ptp[53];
++			}
++			break;
++		default:
++			gGptpnetRxDebug.other++;
++			break;
++	}
++
++	if (edtrecv->msgtype <= 15u) {
++		msg = PTPMsgType_debug[edtrecv->msgtype];
++	}
++
++	if (((edtrecv->msgtype == PDELAY_REQ) ||
++		 (edtrecv->msgtype == PDELAY_RESP) ||
++		 (edtrecv->msgtype == PDELAY_RESP_FOLLOW_UP)) &&
++		(gGptpnetRxDebug.firstNLogs < LLD_GPTPNET_RX_DEBUG_FIRST_N)) {
++		gGptpnetRxDebug.firstNLogs++;
++		if (reqId != NULL) {
++			UB_LOG(UBL_INFO,
++				   "%s: recv[%u] ndev=%d macport=%d type=%s seqId=%d source=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x requesting=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%u\n",
++				   __func__,
++				   gGptpnetRxDebug.firstNLogs,
++				   ndev_index + 1,
++				   macport,
++				   msg,
++				   seqid,
++				   srcId[0], srcId[1], srcId[2], srcId[3], srcId[4], srcId[5], srcId[6], srcId[7],
++				   reqId[0], reqId[1], reqId[2], reqId[3], reqId[4], reqId[5], reqId[6], reqId[7],
++				   reqPort);
++		} else {
++			UB_LOG(UBL_INFO,
++				   "%s: recv[%u] ndev=%d macport=%d type=%s seqId=%d source=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x requesting=n/a\n",
++				   __func__,
++				   gGptpnetRxDebug.firstNLogs,
++				   ndev_index + 1,
++				   macport,
++				   msg,
++				   seqid,
++				   srcId[0], srcId[1], srcId[2], srcId[3], srcId[4], srcId[5], srcId[6], srcId[7]);
++		}
++	}
++
++	if (gGptpnetRxDebug.lastPrintTs64 == 0) {
++		gGptpnetRxDebug.lastPrintTs64 = (int64_t)eventTs64;
++	} else if (((int64_t)eventTs64 - gGptpnetRxDebug.lastPrintTs64) >= (5 * UB_SEC_NS)) {
++		UB_LOG(UBL_INFO,
++			   "%s: summary sync=%u fup=%u pdreq=%u pdresp=%u pdfup=%u other=%u\n",
++			   __func__,
++			   gGptpnetRxDebug.sync,
++			   gGptpnetRxDebug.followUp,
++			   gGptpnetRxDebug.pdelayReq,
++			   gGptpnetRxDebug.pdelayResp,
++			   gGptpnetRxDebug.pdelayRespFollowUp,
++			   gGptpnetRxDebug.other);
++		gGptpnetRxDebug.lastPrintTs64 = (int64_t)eventTs64;
++	}
++}
++#endif
++
+ static int push_txts_info(txts_queue_t *q, txts_info_t *in)
+ {
+ 	txts_info_t *txts_info = &q->txts_info[q->wri];
+@@ -459,6 +575,10 @@ static int provide_rxframe(gptpnet_data_t *gpnet, uint8_t *buf,
+ 	if (ndev_index < 0) {
+ 		return -1;
+ 	}
++#if LLD_GPTPNET_ENABLE_RX_DEBUG
++	gptpnet_dbg_trace_rx(buf, size, macport, ndev_index, seqid, &edtrecv,
++						 gpnet->event_ts64);
++#endif
+ 	return gpnet->cb_func(gpnet->cb_data, ndev_index+1, GPTPNET_EVENT_RECV,
+ 					  &gpnet->event_ts64, &edtrecv);
+ }
