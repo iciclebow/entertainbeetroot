@@ -1,0 +1,245 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
+index 4d75196..0a9a9c0 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/gptp_cpsw_app/default_flow_cfg.c
+@@ -37,7 +37,7 @@
+ #include <nrt_flow/dataflow.h>
+ 
+ #ifndef ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB
+-#define ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB   (1U)
++#define ENETAPP_ENABLE_PTP_SHARED_RX_DEFAULT_CB   (0U)
+ #endif
+ 
+ int EnetApp_lldCfgUpdateCb(cb_socket_lldcfg_update_t *update_cfg)
+@@ -58,6 +58,8 @@ int EnetApp_lldCfgUpdateCb(cb_socket_lldcfg_update_t *update_cfg)
+         update_cfg->rxDefaultDataCb = rxDefaultDataCb;
+         update_cfg->rxDefaultCbArg = NULL;
+ #else
++        /* Steady-state behavior: keep the gPTP RX channel dedicated so
++         * ordinary 0x88F7 traffic is owned by the gPTP socket path. */
+         update_cfg->dmaRxShared = false;
+         update_cfg->dmaRxOwner = true;
+         update_cfg->rxDefaultDataCb = NULL;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index 85c29a9..ca241b2 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -807,6 +807,7 @@ static void EnetApp_rxTask(void *args)
+         {
+             rxFrame = (EthFrame *)rxPktInfo->sgList.list[0].bufPtr;
+             uint32_t isPhyStatus = 0U;
++            uint32_t isOrdinaryPtp = 0U;
+             uint32_t frameLen = rxPktInfo->sgList.list[0].segmentFilledLen;
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+             static uint32_t dbgTotal = 0U;
+@@ -814,15 +815,13 @@ static void EnetApp_rxTask(void *args)
+             static uint32_t dbgPtpNonPsf = 0U;
+             static uint32_t dbgOther = 0U;
+             static uint32_t dbgPtpEchoed = 0U;
+-            static uint32_t dbgPtpDropped = 0U;
++            static uint32_t dbgPtpBypassed = 0U;
+             static uint32_t dbgPtpNoTxPkt = 0U;
+             static uint32_t dbgFirstNLogs = 0U;
+             static uint32_t dbgLastPrintTimeMs = 0U;
+             uint32_t dbgL2HdrLen = 0U;
+-            uint16_t dbgEthType = 0U;
+             uint16_t dbgSeqId = 0xFFFFU;
+             uint8_t dbgMsgType = 0xFFU;
+-            uint32_t isNonPsfPtp = 0U;
+             const uint32_t nowMs = ClockP_getTimeUsec() / 1000U;
+             const char *ptpAction = "n/a";
+ #endif
+@@ -879,28 +878,38 @@ static void EnetApp_rxTask(void *args)
+                 }
+             }
+ 
++            if (!isPhyStatus)
++            {
++                uint32_t l2HdrLen = 0U;
++                uint16_t ethType = EnetApp_getEthType((const uint8_t *)rxFrame,
++                                                      frameLen,
++                                                      &l2HdrLen);
++                if (ethType == 0x88F7U)
++                {
++                    isOrdinaryPtp = 1U;
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++                    dbgL2HdrLen = l2HdrLen;
++                    dbgMsgType = EnetApp_getPtpMsgType((const uint8_t *)rxFrame,
++                                                       frameLen,
++                                                       dbgL2HdrLen,
++                                                       &dbgSeqId);
++#endif
++                }
++            }
++
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+             dbgTotal++;
+             if (isPhyStatus)
+             {
+                 dbgPhyStatus++;
+             }
++            else if (isOrdinaryPtp)
++            {
++                dbgPtpNonPsf++;
++            }
+             else
+             {
+-                dbgEthType = EnetApp_getEthType((const uint8_t *)rxFrame, frameLen, &dbgL2HdrLen);
+-                if (dbgEthType == 0x88F7U)
+-                {
+-                    isNonPsfPtp = 1U;
+-                    dbgPtpNonPsf++;
+-                    dbgMsgType = EnetApp_getPtpMsgType((const uint8_t *)rxFrame,
+-                                                       frameLen,
+-                                                       dbgL2HdrLen,
+-                                                       &dbgSeqId);
+-                }
+-                else
+-                {
+-                    dbgOther++;
+-                }
++                dbgOther++;
+             }
+ #endif
+ 
+@@ -1165,6 +1174,67 @@ static void EnetApp_rxTask(void *args)
+             }
+ #endif
+ 
++#if ENETAPP_ENABLE_PTP_PATH_DEBUG
++            if (isOrdinaryPtp)
++            {
++                dbgPtpBypassed++;
++                ptpAction = "bypass-to-gptp";
++            }
++
++            if (isOrdinaryPtp && (dbgFirstNLogs < ENETAPP_PTP_PATH_DEBUG_FIRST_N))
++            {
++                dbgFirstNLogs++;
++                EnetAppUtils_print(
++                    "%s: default-flow PTP[%u] len=%u dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x type=%s(0x%02x) seqId=%u action=%s\r\n",
++                    gEnetAppCfg.name,
++                    dbgFirstNLogs,
++                    frameLen,
++                    rxFrame->hdr.dstMac[0U], rxFrame->hdr.dstMac[1U], rxFrame->hdr.dstMac[2U],
++                    rxFrame->hdr.dstMac[3U], rxFrame->hdr.dstMac[4U], rxFrame->hdr.dstMac[5U],
++                    rxFrame->hdr.srcMac[0U], rxFrame->hdr.srcMac[1U], rxFrame->hdr.srcMac[2U],
++                    rxFrame->hdr.srcMac[3U], rxFrame->hdr.srcMac[4U], rxFrame->hdr.srcMac[5U],
++                    EnetApp_getPtpMsgTypeName(dbgMsgType),
++                    dbgMsgType,
++                    dbgSeqId,
++                    ptpAction);
++            }
++
++            if (dbgLastPrintTimeMs == 0U)
++            {
++                dbgLastPrintTimeMs = nowMs;
++            }
++            else if ((nowMs - dbgLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
++            {
++                EnetAppUtils_print(
++                    "%s: default-flow summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpBypassed=%u ptpNoTx=%u echoEnabled=%u\r\n",
++                    gEnetAppCfg.name,
++                    dbgTotal,
++                    dbgPhyStatus,
++                    dbgPtpNonPsf,
++                    dbgOther,
++                    dbgPtpEchoed,
++                    dbgPtpBypassed,
++                    dbgPtpNoTxPkt,
++                    ENETAPP_ENABLE_DEFAULT_RX_ECHO);
++                dbgLastPrintTimeMs = nowMs;
++            }
++#endif
++
++            if (isOrdinaryPtp)
++            {
++                EnetDma_checkPktState(&rxPktInfo->pktState,
++                                      ENET_PKTSTATE_MODULE_APP,
++                                      ENET_PKTSTATE_APP_WITH_READYQ,
++                                      ENET_PKTSTATE_APP_WITH_FREEQ);
++
++                /* Ordinary 0x88F7 traffic belongs to the dedicated gPTP RX
++                 * path. The regular default-flow task only observes it for
++                 * debug and then immediately recycles the packet. */
++                EnetQueue_enq(&rxFreeQ, &rxPktInfo->node);
++                rxPktInfo = (EnetDma_Pkt *)EnetQueue_deq(&rxReadyQ);
++                continue;
++            }
++
+ #if ENETAPP_ENABLE_DEFAULT_RX_ECHO
+             /* Retrieve TX packets from driver and recycle them */
+             EnetApp_retrieveFreeTxPkts();
+@@ -1202,7 +1272,7 @@ static void EnetApp_rxTask(void *args)
+                     /* Enqueue the packet for later transmission */
+                     EnetQueue_enq(&txSubmitQ, &txPktInfo->node);
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+-                    if (isNonPsfPtp)
++                    if (isOrdinaryPtp)
+                     {
+                         dbgPtpEchoed++;
+                         ptpAction = "echo";
+@@ -1213,7 +1283,7 @@ static void EnetApp_rxTask(void *args)
+                 {
+                     EnetAppUtils_print("%s: Drop due to TX pkt not available\r\n", gEnetAppCfg.name);
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+-                    if (isNonPsfPtp)
++                    if (isOrdinaryPtp)
+                     {
+                         dbgPtpNoTxPkt++;
+                         ptpAction = "drop-no-tx-pkt";
+@@ -1221,54 +1291,6 @@ static void EnetApp_rxTask(void *args)
+ #endif
+                 }
+             }
+-#else
+-#if ENETAPP_ENABLE_PTP_PATH_DEBUG
+-            if (isNonPsfPtp)
+-            {
+-                dbgPtpDropped++;
+-                ptpAction = "drop-echo-disabled";
+-            }
+-#endif
+-#endif
+-
+-#if ENETAPP_ENABLE_PTP_PATH_DEBUG
+-            if (isNonPsfPtp && (dbgFirstNLogs < ENETAPP_PTP_PATH_DEBUG_FIRST_N))
+-            {
+-                dbgFirstNLogs++;
+-                EnetAppUtils_print(
+-                    "%s: default-flow PTP[%u] len=%u dst=%02x:%02x:%02x:%02x:%02x:%02x src=%02x:%02x:%02x:%02x:%02x:%02x type=%s(0x%02x) seqId=%u action=%s\r\n",
+-                    gEnetAppCfg.name,
+-                    dbgFirstNLogs,
+-                    frameLen,
+-                    rxFrame->hdr.dstMac[0U], rxFrame->hdr.dstMac[1U], rxFrame->hdr.dstMac[2U],
+-                    rxFrame->hdr.dstMac[3U], rxFrame->hdr.dstMac[4U], rxFrame->hdr.dstMac[5U],
+-                    rxFrame->hdr.srcMac[0U], rxFrame->hdr.srcMac[1U], rxFrame->hdr.srcMac[2U],
+-                    rxFrame->hdr.srcMac[3U], rxFrame->hdr.srcMac[4U], rxFrame->hdr.srcMac[5U],
+-                    EnetApp_getPtpMsgTypeName(dbgMsgType),
+-                    dbgMsgType,
+-                    dbgSeqId,
+-                    ptpAction);
+-            }
+-
+-            if (dbgLastPrintTimeMs == 0U)
+-            {
+-                dbgLastPrintTimeMs = nowMs;
+-            }
+-            else if ((nowMs - dbgLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
+-            {
+-                EnetAppUtils_print(
+-                    "%s: default-flow summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpDropped=%u ptpNoTx=%u echoEnabled=%u\r\n",
+-                    gEnetAppCfg.name,
+-                    dbgTotal,
+-                    dbgPhyStatus,
+-                    dbgPtpNonPsf,
+-                    dbgOther,
+-                    dbgPtpEchoed,
+-                    dbgPtpDropped,
+-                    dbgPtpNoTxPkt,
+-                    ENETAPP_ENABLE_DEFAULT_RX_ECHO);
+-                dbgLastPrintTimeMs = nowMs;
+-            }
+ #endif
+ 
+             EnetDma_checkPktState(&rxPktInfo->pktState,
