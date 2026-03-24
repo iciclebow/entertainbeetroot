@@ -193,6 +193,19 @@ index 4457cd1..3b59e14 100644
 +                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
 +    return status;
 +}
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
+index 34295d3..7c647f2 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
+@@ -106,5 +106,7 @@ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_READ_REG
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_WRITE_REG)
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PRINT_REGS)
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME)
+-
++ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP)
++ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP)
++ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP)
+ 
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
 index bd3db78..4154207 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
@@ -868,7 +881,7 @@ index b092010..0a65175 100644
   * @brief Adjusts the frequency of the PTP clock.
   * @param hTSync Pointer to the LLDTSync instance.
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
-index b6ea850..72b71fd 100644
+index b6ea850..85dab86 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
 @@ -51,6 +51,7 @@
@@ -879,7 +892,7 @@ index b6ea850..72b71fd 100644
  #include "tilld/lldtsync.h"
  #include "combase_private.h"
  #include <tsn_gptp/gptpconf/xl4-extmod-xl4gptp.h>
-@@ -69,6 +70,50 @@ struct LLDTSync {
+@@ -69,6 +70,64 @@ struct LLDTSync {
  	uint32_t coreId;
  };
  
@@ -902,7 +915,21 @@ index b6ea850..72b71fd 100644
 +	inArgs.domain = domain;
 +
 +	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId, cmd, &prms, status);
++
++	switch (cmd) {
++	case ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP:
++		ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
++			   ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP, &prms, status);
++		break;
++	case ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP:
++		ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
++			   ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP, &prms, status);
++		break;
++	default:
++		status = ENET_EINVALIDPARAMS;
++		break;
++	}
++
 +	return status;
 +}
 +
@@ -930,7 +957,7 @@ index b6ea850..72b71fd 100644
  #ifndef CB_LLDTSYNC_MMEM
  #define CB_LLDTSYNC_MMEM lldtsync_mem
  #endif
-@@ -132,6 +177,18 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+@@ -132,6 +191,18 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
  	if (Enet_isCpswFamily(hTSync->enetType) == false) {
  		return LLDENET_E_UNSUPPORT;
  	}
@@ -949,7 +976,7 @@ index b6ea850..72b71fd 100644
  	memset(&inArgs, 0, sizeof(inArgs));
  	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
  	inArgs.seqId   = seqId;
-@@ -158,6 +215,21 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+@@ -158,6 +229,21 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
  		return LLDENET_E_PARAM;
  	}
  
@@ -971,7 +998,7 @@ index b6ea850..72b71fd 100644
  	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
  	inArgs.seqId = seqId;
  	inArgs.portNum = txPort;
-@@ -173,6 +245,27 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+@@ -173,6 +259,27 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
  	return LLDENET_E_OK;
  }
  
