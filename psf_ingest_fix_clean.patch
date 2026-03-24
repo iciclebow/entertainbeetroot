@@ -25,10 +25,10 @@ index 8b53910..a0dd5e6 100644
  		UB_PROTECTED_FUNC(s_socket_lldcfg_update_cb, res, update_cfg);
  		if (res != 0) {
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
-index 7c47b04..4772a71 100644
+index 7c47b04..7acc380 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
-@@ -450,16 +450,84 @@ static bool IsMacAddrSet(uint8_t *mac)
+@@ -450,16 +450,103 @@ static bool IsMacAddrSet(uint8_t *mac)
  	return ((mac[0]|mac[1]|mac[2]|mac[3]|mac[4]|mac[5]) != 0);
  }
  
@@ -36,6 +36,14 @@ index 7c47b04..4772a71 100644
 +{
 +	return ((filter->vlanId > 0U) || (filter->ethType > 0U) ||
 +		IsMacAddrSet(filter->dstMacAddr));
++}
++
++static bool IsRxFilterEqual(const LLDEnetRxFilter_t *lhs,
++				      const LLDEnetRxFilter_t *rhs)
++{
++	return ((lhs->vlanId == rhs->vlanId) &&
++		(lhs->ethType == rhs->ethType) &&
++		(memcmp(lhs->dstMacAddr, rhs->dstMacAddr, ENET_MAC_ADDR_LEN) == 0));
 +}
 +
 +static int LLDEnetDeleteFilter(LLDEnet_t *hLLDEnet,
@@ -104,6 +112,7 @@ index 7c47b04..4772a71 100644
  {
  	LLDEnetRxDma_t *hLLDRxDma;
 +	LLDEnetRxFilter_t prevOwnerFilter;
++	LLDEnetRxFilter_t requestedOwnerFilter;
  	int32_t status = ENET_SOK;
  	uint32_t i;
  
@@ -111,10 +120,20 @@ index 7c47b04..4772a71 100644
  		return LLDENET_E_PARAM;
  	}
 +	memset(&prevOwnerFilter, 0, sizeof(prevOwnerFilter));
++	memset(&requestedOwnerFilter, 0, sizeof(requestedOwnerFilter));
++	if (vlanId > 0U) {
++		requestedOwnerFilter.vlanId = vlanId;
++	}
++	if (ethType > 0U) {
++		requestedOwnerFilter.ethType = ethType;
++	}
++	if (IsMacAddrSet(dstMacAddr)) {
++		memcpy(requestedOwnerFilter.dstMacAddr, dstMacAddr, ENET_MAC_ADDR_LEN);
++	}
  	for (i = 0U; i < hLLDEnet->numRxChannels; i++) {
  		hLLDRxDma = hLLDEnet->hLLDRxDma[i];
  		if (hLLDRxDma == NULL) {
-@@ -482,6 +550,9 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+@@ -482,6 +569,9 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
  				memcpy(subRx->rxFilter.dstMacAddr, dstMacAddr, ENET_MAC_ADDR_LEN);
  			}
  		} else {
@@ -124,10 +143,13 @@ index 7c47b04..4772a71 100644
  			if (vlanId > 0) {
  				hLLDRxDma->ownerFilter.vlanId = vlanId;
  			}
-@@ -504,8 +575,12 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+@@ -504,8 +594,15 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
  	 * Policers/classifiers aren't effective on this SoC, and configuring them could
  	 * lead to a shortage when enabling multiple TSN modules as it supports only 4.*/
  	if(hLLDRxDma->dmaRxShared == false) {
++		if (IsRxFilterEqual(&prevOwnerFilter, &requestedOwnerFilter)) {
++			return LLDENET_E_OK;
++		}
 +		status = LLDEnetDeleteFilter(hLLDEnet, &prevOwnerFilter, hLLDRxDma->rxFlowIdx);
 +		if (status != LLDENET_E_OK) {
 +			return status;
@@ -138,7 +160,7 @@ index 7c47b04..4772a71 100644
  	}
  	else
  	{
-@@ -862,6 +937,18 @@ static bool IsRxFrameForDmaOwner(LLDEnetRxDma_t *hLLDRxDma, void *frame, int siz
+@@ -862,6 +959,18 @@ static bool IsRxFrameForDmaOwner(LLDEnetRxDma_t *hLLDRxDma, void *frame, int siz
  	return FilterIsMatched(&hLLDRxDma->ownerFilter, (uint8_t*)frame, size);
  }
  
@@ -157,7 +179,7 @@ index 7c47b04..4772a71 100644
  static int LLDEnetRecvSubRxGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
  			void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg)
  {
-@@ -940,37 +1027,53 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+@@ -940,37 +1049,53 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
  	EnetAppUtils_assert(hLLDRxDma != NULL);
  	rxFrame = (EthFrame *) EnetUtils_physToVirt((uint64_t)pktInfo->sgList.list[0].bufPtr, NULL);
  	pktSize = pktInfo->sgList.list[0].segmentFilledLen;
