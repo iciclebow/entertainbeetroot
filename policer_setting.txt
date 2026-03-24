@@ -1,0 +1,10 @@
+    if (IsMacAddrSet(dstMacAddr) == true)
+    {
+        setPolicerEntryInArgs.policerMatch.policerMatchEnMask |=
+            CPSW_ALE_POLICER_MATCH_MACDST;
+        setPolicerEntryInArgs.policerMatch.dstMacAddrInfo.portNum =
+            CPSW_ALE_HOST_PORT_NUM;
+        setPolicerEntryInArgs.policerMatch.dstMacAddrInfo.addr.vlanId = vlanId;
+        memcpy(&setPolicerEntryInArgs.policerMatch.dstMacAddrInfo.addr.addr[0U],
+               &dstMacAddr[0U], ENET_MAC_ADDR_LEN);
+    }
