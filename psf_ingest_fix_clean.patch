@@ -1,0 +1,252 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
+index 35d70ce..752c235 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
+@@ -220,6 +220,7 @@ typedef struct cb_rawsock_paras{
+ 	uint16_t vlanid; //!< vlan identifier
+ 	uint32_t sndbuf; //!< socket send buffer size, set to 0 to use default value
+ 	uint32_t rcvbuf; //!< socket receive buffer size, set to 0 to use default value
++	uint8_t rxFilterDstMac[6]; //!< optional initial RX destination MAC filter
+ } cb_rawsock_paras_t;
+ 
+ /**
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
+index 8b53910..a0dd5e6 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
+@@ -111,6 +111,9 @@ static int update_enet_cfg(cb_rawsock_paras_t *llrawp, LLDEnetCfg_t *ecfg,
+ 	update_cfg->dmaRxShared = -1;
+ 	update_cfg->dmaRxOwner = -1;
+ 	update_cfg->numRxChannels = 0;
++	if (MAC_VALID(llrawp->rxFilterDstMac)) {
++		memcpy(ecfg->dstMacAddr, llrawp->rxFilterDstMac, sizeof(ecfg->dstMacAddr));
++	}
+ 	if (s_socket_lldcfg_update_cb != NULL) {
+ 		UB_PROTECTED_FUNC(s_socket_lldcfg_update_cb, res, update_cfg);
+ 		if (res != 0) {
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+index 7c47b04..4772a71 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+@@ -450,16 +450,84 @@ static bool IsMacAddrSet(uint8_t *mac)
+ 	return ((mac[0]|mac[1]|mac[2]|mac[3]|mac[4]|mac[5]) != 0);
+ }
+ 
++static bool IsRxFilterSet(LLDEnetRxFilter_t *filter)
++{
++	return ((filter->vlanId > 0U) || (filter->ethType > 0U) ||
++		IsMacAddrSet(filter->dstMacAddr));
++}
++
++static int LLDEnetDeleteFilter(LLDEnet_t *hLLDEnet,
++				       LLDEnetRxFilter_t *filter,
++				       uint32_t rxFlowIdx)
++{
++	CpswAle_PolicerMatchParams inMatchParam;
++	CpswAle_PolicerEntryOutArgs outEntry;
++	CpswAle_DelPolicerEntryInArgs delPolicerInArgs;
++	Enet_IoctlPrms prms;
++	int32_t status;
++
++	if (!IsRxFilterSet(filter)) {
++		return LLDENET_E_OK;
++	}
++
++	memset(&inMatchParam, 0, sizeof(inMatchParam));
++	memset(&outEntry, 0, sizeof(outEntry));
++	memset(&delPolicerInArgs, 0, sizeof(delPolicerInArgs));
++
++	if (IsMacAddrSet(filter->dstMacAddr)) {
++		inMatchParam.policerMatchEnMask = CPSW_ALE_POLICER_MATCH_MACDST;
++		inMatchParam.dstMacAddrInfo.portNum = CPSW_ALE_HOST_PORT_NUM;
++		inMatchParam.dstMacAddrInfo.addr.vlanId = filter->vlanId;
++		memcpy(&inMatchParam.dstMacAddrInfo.addr.addr[0U],
++		       &filter->dstMacAddr[0U], ENET_MAC_ADDR_LEN);
++	}
++
++	if (filter->ethType > 0U) {
++		inMatchParam.policerMatchEnMask |= CPSW_ALE_POLICER_MATCH_ETHERTYPE;
++		inMatchParam.etherType = filter->ethType;
++	}
++
++	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inMatchParam, &outEntry);
++	status = Enet_ioctl(hLLDEnet->hEnet, hLLDEnet->coreId,
++			    CPSW_ALE_IOCTL_GET_POLICER, &prms);
++	if (status == ENET_ENOTFOUND) {
++		return LLDENET_E_OK;
++	}
++	if (status != ENET_SOK) {
++		UB_LOG(UBL_ERROR,"Enet_ioctl CPSW_ALE_IOCTL_GET_POLICER failed %d\n", status);
++		return LLDENET_E_IOCTL;
++	}
++
++	if ((outEntry.threadIdEn != true) || (outEntry.threadId != rxFlowIdx)) {
++		return LLDENET_E_OK;
++	}
++
++	memcpy(&delPolicerInArgs.policerMatch, &inMatchParam, sizeof(inMatchParam));
++	delPolicerInArgs.aleEntryMask = inMatchParam.policerMatchEnMask;
++
++	ENET_IOCTL_SET_IN_ARGS(&prms, &delPolicerInArgs);
++	status = Enet_ioctl(hLLDEnet->hEnet, hLLDEnet->coreId,
++			    CPSW_ALE_IOCTL_DEL_POLICER, &prms);
++	if (status != ENET_SOK) {
++		UB_LOG(UBL_ERROR,"Enet_ioctl CPSW_ALE_IOCTL_DEL_POLICER failed %d\n", status);
++		return LLDENET_E_IOCTL;
++	}
++
++	return LLDENET_E_OK;
++}
++
+ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+-				  uint32_t vlanId, uint32_t ethType)
++					  uint32_t vlanId, uint32_t ethType)
+ {
+ 	LLDEnetRxDma_t *hLLDRxDma;
++	LLDEnetRxFilter_t prevOwnerFilter;
+ 	int32_t status = ENET_SOK;
+ 	uint32_t i;
+ 
+ 	if ((hLLDEnet == NULL) || (dstMacAddr == NULL)) {
+ 		return LLDENET_E_PARAM;
+ 	}
++	memset(&prevOwnerFilter, 0, sizeof(prevOwnerFilter));
+ 	for (i = 0U; i < hLLDEnet->numRxChannels; i++) {
+ 		hLLDRxDma = hLLDEnet->hLLDRxDma[i];
+ 		if (hLLDRxDma == NULL) {
+@@ -482,6 +550,9 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 				memcpy(subRx->rxFilter.dstMacAddr, dstMacAddr, ENET_MAC_ADDR_LEN);
+ 			}
+ 		} else {
++			if (i == 0U) {
++				memcpy(&prevOwnerFilter, &hLLDRxDma->ownerFilter, sizeof(prevOwnerFilter));
++			}
+ 			if (vlanId > 0) {
+ 				hLLDRxDma->ownerFilter.vlanId = vlanId;
+ 			}
+@@ -504,8 +575,12 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 	 * Policers/classifiers aren't effective on this SoC, and configuring them could
+ 	 * lead to a shortage when enabling multiple TSN modules as it supports only 4.*/
+ 	if(hLLDRxDma->dmaRxShared == false) {
++		status = LLDEnetDeleteFilter(hLLDEnet, &prevOwnerFilter, hLLDRxDma->rxFlowIdx);
++		if (status != LLDENET_E_OK) {
++			return status;
++		}
+ 		status = EnetApp_applyClassifier(hLLDEnet->hEnet, hLLDEnet->coreId, dstMacAddr,
+-										 vlanId, ethType, hLLDRxDma->rxFlowIdx);
++											 vlanId, ethType, hLLDRxDma->rxFlowIdx);
+ 	}
+ 	else
+ 	{
+@@ -862,6 +937,18 @@ static bool IsRxFrameForDmaOwner(LLDEnetRxDma_t *hLLDRxDma, void *frame, int siz
+ 	return FilterIsMatched(&hLLDRxDma->ownerFilter, (uint8_t*)frame, size);
+ }
+ 
++static bool IsKnownPsfFrame(const uint8_t *buf, int size)
++{
++	static const uint8_t phyStatusHdr[14U] = {
++		0x01, 0x1B, 0x19, 0x00, 0x00, 0x00,
++		0x08, 0x00, 0x17, 0x0B, 0x6B, 0x0F,
++		0x88, 0xF7,
++	};
++
++	return ((size >= (int)sizeof(phyStatusHdr)) &&
++		(memcmp(buf, phyStatusHdr, sizeof(phyStatusHdr)) == 0));
++}
++
+ static int LLDEnetRecvSubRxGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 			void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg)
+ {
+@@ -940,37 +1027,53 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 	EnetAppUtils_assert(hLLDRxDma != NULL);
+ 	rxFrame = (EthFrame *) EnetUtils_physToVirt((uint64_t)pktInfo->sgList.list[0].bufPtr, NULL);
+ 	pktSize = pktInfo->sgList.list[0].segmentFilledLen;
+-
+-	if ((hLLDRxDma->dmaRxShared == false) ||
+-		IsRxFrameForDmaOwner(hLLDRxDma, rxFrame, pktSize)) {
+-		LLDEnetDbgTracePtpRoute("owner-accept", hLLDRxDma, rxFrame, pktSize,
+-							   (uint8_t)pktInfo->rxPortNum, -1);
+-		if (LLDEnetRecvCb != NULL) { /* zero-copy */
+-			LLDEnetFrame_t tmpFrame;
+-			memset(&tmpFrame, 0, sizeof(tmpFrame));
+-			tmpFrame.rxts = pktInfo->tsInfo.rxPktTs;
+-			tmpFrame.size = pktSize;
+-			tmpFrame.buf = (uint8_t*)rxFrame;
+-			tmpFrame.port = (uint8_t)pktInfo->rxPortNum;
+-			LLDEnetRecvCb(&tmpFrame, cbArg);
++	{
++		bool isKnownPsf = IsKnownPsfFrame((const uint8_t *)rxFrame, pktSize);
++		bool dropMissteeredPsf = (hLLDRxDma->dmaRxShared == false) &&
++					 (hLLDRxDma->ownerFilter.ethType == ETH_P_1588) &&
++					 isKnownPsf;
++		bool ownerAccept = false;
++
++		if (hLLDRxDma->dmaRxShared == false) {
++			ownerAccept = !dropMissteeredPsf;
+ 		} else {
+-			if (frame->size >= pktSize) {
+-				frame->rxts = pktInfo->tsInfo.rxPktTs;
+-				frame->size = pktSize;
+-				memcpy(frame->buf, rxFrame, frame->size);
+-				frame->port = (uint8_t)pktInfo->rxPortNum;
++			ownerAccept = IsRxFrameForDmaOwner(hLLDRxDma, rxFrame, pktSize);
++		}
++
++		if (ownerAccept) {
++			LLDEnetDbgTracePtpRoute("owner-accept", hLLDRxDma, rxFrame, pktSize,
++								   (uint8_t)pktInfo->rxPortNum, -1);
++			if (LLDEnetRecvCb != NULL) { /* zero-copy */
++				LLDEnetFrame_t tmpFrame;
++				memset(&tmpFrame, 0, sizeof(tmpFrame));
++				tmpFrame.rxts = pktInfo->tsInfo.rxPktTs;
++				tmpFrame.size = pktSize;
++				tmpFrame.buf = (uint8_t*)rxFrame;
++				tmpFrame.port = (uint8_t)pktInfo->rxPortNum;
++				LLDEnetRecvCb(&tmpFrame, cbArg);
+ 			} else {
+-				res = LLDENET_E_BUFSIZE;
++				if (frame->size >= pktSize) {
++					frame->rxts = pktInfo->tsInfo.rxPktTs;
++					frame->size = pktSize;
++					memcpy(frame->buf, rxFrame, frame->size);
++					frame->port = (uint8_t)pktInfo->rxPortNum;
++				} else {
++					res = LLDENET_E_BUFSIZE;
++				}
+ 			}
++		} else if (dropMissteeredPsf) {
++			LLDEnetDbgTracePtpRoute("owner-drop-psf", hLLDRxDma, rxFrame, pktSize,
++								   (uint8_t)pktInfo->rxPortNum, -1);
++			res = LLDENET_E_NOMATCH;
++		} else {
++			/* only happens when the dmaRxShared = true and this function
++			 * is called by owner */
++			LLDEnetDbgTracePtpRoute("owner-defer", hLLDRxDma, rxFrame, pktSize,
++								   (uint8_t)pktInfo->rxPortNum, -1);
++			LLDEnetPushFrameToMatchedSubRx(hLLDRxDma, pktInfo->rxPortNum, rxFrame,
++					pktInfo->sgList.list[0].segmentFilledLen, pktInfo->tsInfo.rxPktTs);
++			res = LLDENET_E_NOMATCH;
+ 		}
+-	} else {
+-		/* only happens when the dmaRxShared = true and this function
+-		 * is called by owner */
+-		LLDEnetDbgTracePtpRoute("owner-defer", hLLDRxDma, rxFrame, pktSize,
+-							   (uint8_t)pktInfo->rxPortNum, -1);
+-		LLDEnetPushFrameToMatchedSubRx(hLLDRxDma, pktInfo->rxPortNum, rxFrame,
+-				pktInfo->sgList.list[0].segmentFilledLen, pktInfo->tsInfo.rxPktTs);
+-		res = LLDENET_E_NOMATCH;
+ 	}
+ 
+ 	/* Release the received packet to the correct DMA channel */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+index e0b9b2b..a049d3b 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+@@ -285,6 +285,7 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 			gptpInstanceIndex, XL4_EXTMOD_XL4GPTP_SOCKET_TXPRIORITY,
+ 			YDBI_CONFIG);
+ 		llrawp.rw_type=CB_RAWSOCK_RDWR;
++		memcpy(llrawp.rxFilterDstMac, destmac, sizeof(llrawp.rxFilterDstMac));
+ 
+ 		gptpgcfg_releasedb(gptpInstanceIndex);
+ 		if(cb_rawsock_open(&llrawp, &gpnet->lldsock, NULL, NULL, srcmac) < 0) {
