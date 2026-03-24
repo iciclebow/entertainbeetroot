@@ -1,0 +1,1027 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
+index 73cf2a0..c130ed7 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
+@@ -206,6 +206,33 @@ enum EnetPhy_Ioctl_e
+      * - outArgs: None
+      */
+     ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME = ENET_PHY_PUBLIC_IOCTL(14U),
++
++    /*!
++     * \brief Register a pending TX timestamp lookup with the PHY backend.
++     *
++     * IOCTL parameters:
++     * -  inArgs: #EnetPhy_PtpTimestampInArgs
++     * - outArgs: None
++     */
++    ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(15U),
++
++    /*!
++     * \brief Retrieve a message-keyed PHY TX timestamp.
++     *
++     * IOCTL parameters:
++     * -  inArgs: #EnetPhy_PtpTimestampInArgs
++     * - outArgs: uint64_t
++     */
++    ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(16U),
++
++    /*!
++     * \brief Retrieve a message-keyed PHY RX timestamp.
++     *
++     * IOCTL parameters:
++     * -  inArgs: #EnetPhy_PtpTimestampInArgs
++     * - outArgs: uint64_t
++     */
++    ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(17U),
+ };
+ 
+ /*!
+@@ -292,6 +319,24 @@ typedef struct EnetPhy_PtpStatusFrameInArgs_s
+     uint32_t frameLen;
+ } EnetPhy_PtpStatusFrameInArgs;
+ 
++/*!
++ * \brief Input args for PHY message-keyed PTP timestamp commands.
++ */
++typedef struct EnetPhy_PtpTimestampInArgs_s
++{
++    /*! Port number */
++    Enet_MacPort macPort;
++
++    /*! PTP message type */
++    uint8_t msgType;
++
++    /*! PTP sequence id */
++    uint16_t seqId;
++
++    /*! PTP domain */
++    uint8_t domain;
++} EnetPhy_PtpTimestampInArgs;
++
+ /* ========================================================================== */
+ /*                         Global Variables Declarations                      */
+ /* ========================================================================== */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+index 563bca4..e21945d 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+@@ -88,6 +88,9 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_READ_REG(EnetPhy_Handl
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_WRITE_REG(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PRINT_REGS(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ 
+ /* ========================================================================== */
+ /*                        Deprecated Function Declarations                    */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+index 82e4102..764187a 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+@@ -158,6 +158,9 @@ static EnetPhyMdioDfltIoctlHandlerRegistry_t EnetPhyMdioDfltIoctlHandlerRegistry
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_C45_WRITE_REG),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PRINT_REGS),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT(ENET_PHY_IOCTL_REGISTER_HANDLER),
+ };
+ 
+@@ -516,4 +519,3 @@ static int32_t EnetPhyMdioDflt_ioctl_handler_default(EnetPhy_Handle hPhy, Enet_I
+ }
+ 
+ 
+-
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+index 4457cd1..3b59e14 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+@@ -273,3 +273,94 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(E
+                      macPortId, status);
+     return status;
+ }
++
++int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP(EnetPhy_Handle hPhy,
++                                                                            Enet_IoctlPrms *prms)
++{
++    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
++    int32_t status = ENET_SOK;
++
++    if (inArgs == NULL)
++    {
++        status = ENETPHY_EBADARGS;
++    }
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->waitPtpTxTime == NULL))
++    {
++        status = ENET_ENOTSUPPORTED;
++    }
++    else
++    {
++        status = hPhy->hDrv->waitPtpTxTime(hPhy,
++                                           inArgs->macPort,
++                                           inArgs->msgType,
++                                           inArgs->seqId,
++                                           inArgs->domain);
++    }
++
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to register PHY TX timestamp wait: %d\n",
++                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
++    return status;
++}
++
++int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP(EnetPhy_Handle hPhy,
++                                                                           Enet_IoctlPrms *prms)
++{
++    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
++    uint64_t *outTs = (uint64_t *)prms->outArgs;
++    int32_t status = ENET_SOK;
++
++    if ((inArgs == NULL) || (outTs == NULL))
++    {
++        status = ENETPHY_EBADARGS;
++    }
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getPtpTxTime == NULL))
++    {
++        status = ENET_ENOTSUPPORTED;
++    }
++    else
++    {
++        status = hPhy->hDrv->getPtpTxTime(hPhy,
++                                          inArgs->macPort,
++                                          inArgs->msgType,
++                                          inArgs->seqId,
++                                          inArgs->domain,
++                                          outTs);
++    }
++
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to get PHY TX timestamp: %d\n",
++                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
++    return status;
++}
++
++int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP(EnetPhy_Handle hPhy,
++                                                                           Enet_IoctlPrms *prms)
++{
++    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
++    uint64_t *outTs = (uint64_t *)prms->outArgs;
++    int32_t status = ENET_SOK;
++
++    if ((inArgs == NULL) || (outTs == NULL))
++    {
++        status = ENETPHY_EBADARGS;
++    }
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getPtpRxTime == NULL))
++    {
++        status = ENET_ENOTSUPPORTED;
++    }
++    else
++    {
++        status = hPhy->hDrv->getPtpRxTime(hPhy,
++                                          inArgs->macPort,
++                                          inArgs->msgType,
++                                          inArgs->seqId,
++                                          inArgs->domain,
++                                          outTs);
++    }
++
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to get PHY RX timestamp: %d\n",
++                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
++    return status;
++}
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
+index bd3db78..4154207 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
+@@ -650,6 +650,18 @@ static Enet_IoctlValidate gEnetPhy_ioctlValidate[] =
+     ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
+                           sizeof(EnetPhy_PtpStatusFrameInArgs),
+                           0U),
++
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP,
++                          sizeof(EnetPhy_PtpTimestampInArgs),
++                          0U),
++
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP,
++                          sizeof(EnetPhy_PtpTimestampInArgs),
++                          sizeof(uint64_t)),
++
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP,
++                          sizeof(EnetPhy_PtpTimestampInArgs),
++                          sizeof(uint64_t)),
+ };
+ #endif
+ 
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
+index 9f611d6..540298d 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
+@@ -121,6 +121,26 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             const uint8_t *frame,
+                                             uint32_t frameLen);
+ 
++static int32_t Dp83tc812_waitPtpTxTime(EnetPhy_Handle hPhy,
++                                       Enet_MacPort macPort,
++                                       uint8_t msgType,
++                                       uint16_t seqId,
++                                       uint8_t domain);
++
++static int32_t Dp83tc812_getPtpTxTime(EnetPhy_Handle hPhy,
++                                      Enet_MacPort macPort,
++                                      uint8_t msgType,
++                                      uint16_t seqId,
++                                      uint8_t domain,
++                                      uint64_t *ts);
++
++static int32_t Dp83tc812_getPtpRxTime(EnetPhy_Handle hPhy,
++                                      Enet_MacPort macPort,
++                                      uint8_t msgType,
++                                      uint16_t seqId,
++                                      uint8_t domain,
++                                      uint64_t *ts);
++
+ static void Dp83tc812_printRegs(EnetPhy_Handle hPhy);
+ 
+ /* ========================================================================== */
+@@ -138,6 +158,9 @@ EnetPhy_Drv gEnetPhyDrvDp83tc812 =
+     .readExtReg         = GenericPhy_readExtReg,
+     .writeExtReg        = GenericPhy_writeExtReg,
+     .processStatusFrame = Dp83tc812_processStatusFrame,
++    .waitPtpTxTime      = Dp83tc812_waitPtpTxTime,
++    .getPtpTxTime       = Dp83tc812_getPtpTxTime,
++    .getPtpRxTime       = Dp83tc812_getPtpRxTime,
+     .printRegs          = Dp83tc812_printRegs,
+ };
+ 
+@@ -187,6 +210,9 @@ static struct dp83tc812_privParams dp83tc812_params = {
+  * - nextStoreIdx     : monotonic sequence number that will be assigned to the next stored entry
+  */
+ #define DP83TC812_PSF_RING_DEPTH              (32U)
++#define DP83TC812_PTP_WAITQ_DEPTH             (16U)
++#define DP83TC812_PTP_WAIT_TTL_TICKS          (64U)
++#define DP83TC812_PTP_DOMAIN_WILDCARD         (0xFFU)
+ #define DP83TC812_PSF_ETH_HDR_LEN             (14U)
+ #define DP83TC812_PSF_PTP_HDR_LEN             (2U)
+ #define DP83TC812_PSF_TYPE_LEN                (2U)
+@@ -221,17 +247,36 @@ static struct dp83tc812_privParams dp83tc812_params = {
+ #define DP83TC812_PSF_DEBUG_SUMMARY_EVERY_N   (50000U)
+ #endif
+ 
+-typedef struct Dp83tc812_PsfStoreEntry_s
++typedef struct Dp83tc812_PtpTsEntry_s
+ {
+     bool valid;
+-    uint16_t psfType;
+     Enet_MacPort macPort;
+-    uint64_t ts64;
+-    uint16_t seqId;
+     uint8_t msgType;
++    uint16_t seqId;
++    uint8_t domain;
++    uint16_t psfType;
++    uint64_t ts64;
+     uint16_t hash;
+     uint32_t storeIndex;
+-} Dp83tc812_PsfStoreEntry;
++} Dp83tc812_PtpTsEntry;
++
++typedef struct Dp83tc812_PtpReadyQueue_s
++{
++    Dp83tc812_PtpTsEntry entries[DP83TC812_PSF_RING_DEPTH];
++    uint32_t writeIdx;
++    uint32_t count;
++} Dp83tc812_PtpReadyQueue;
++
++typedef struct Dp83tc812_PtpTxWaitEntry_s
++{
++    bool valid;
++    Enet_MacPort macPort;
++    uint8_t msgType;
++    uint16_t seqId;
++    uint8_t domain;
++    uint32_t deadlineTick;
++    uint32_t waitIndex;
++} Dp83tc812_PtpTxWaitEntry;
+ 
+ static const uint8_t gDp83tc812PsfEthHdr[DP83TC812_PSF_ETH_HDR_LEN] =
+ {
+@@ -240,19 +285,31 @@ static const uint8_t gDp83tc812PsfEthHdr[DP83TC812_PSF_ETH_HDR_LEN] =
+     0x88U, 0xF7U,
+ };
+ 
+-static Dp83tc812_PsfStoreEntry gDp83tc812PsfRing[DP83TC812_PSF_RING_DEPTH];
+-static uint32_t gDp83tc812PsfWriteIdx = 0U;
+-static uint32_t gDp83tc812PsfCount = 0U;
++static Dp83tc812_PtpReadyQueue gDp83tc812RxReadyQ;
++static Dp83tc812_PtpReadyQueue gDp83tc812TxReadyQ;
++static Dp83tc812_PtpTxWaitEntry gDp83tc812TxWaitQ[DP83TC812_PTP_WAITQ_DEPTH];
++static uint32_t gDp83tc812TxWaitWriteIdx = 0U;
++static uint32_t gDp83tc812TxWaitCount = 0U;
++static uint32_t gDp83tc812OracleTick = 0U;
+ static uint32_t gDp83tc812PsfStoreSeq = 0U;
++static uint32_t gDp83tc812PsfWaitSeq = 0U;
+ static uint32_t gDp83tc812PsfIngestCnt = 0U;
+ static uint32_t gDp83tc812PsfStoredTxCnt = 0U;
+ static uint32_t gDp83tc812PsfStoredRxCnt = 0U;
++static uint32_t gDp83tc812PsfMatchedTxCnt = 0U;
++static uint32_t gDp83tc812PsfDroppedTxUnmatchedCnt = 0U;
+ static uint32_t gDp83tc812PsfRejectShortCnt = 0U;
+ static uint32_t gDp83tc812PsfRejectHdrCnt = 0U;
+ static uint32_t gDp83tc812PsfRejectTxShortCnt = 0U;
+ static uint32_t gDp83tc812PsfRejectRxShortCnt = 0U;
+ static uint32_t gDp83tc812PsfDropEventCnt = 0U;
+ static uint32_t gDp83tc812PsfDropUnsupportedCnt = 0U;
++static uint32_t gDp83tc812PsfWaitRegCnt = 0U;
++static uint32_t gDp83tc812PsfWaitExpireCnt = 0U;
++static uint32_t gDp83tc812PsfRxLookupHitCnt = 0U;
++static uint32_t gDp83tc812PsfRxLookupMissCnt = 0U;
++static uint32_t gDp83tc812PsfTxLookupHitCnt = 0U;
++static uint32_t gDp83tc812PsfTxLookupMissCnt = 0U;
+ 
+ static bool Dp83tc812_psfShouldPrintFrame(void)
+ {
+@@ -291,19 +348,28 @@ static void Dp83tc812_psfMaybePrintSummary(EnetPhy_Handle hPhy)
+     if ((gDp83tc812PsfIngestCnt % summaryEveryN) == 0U)
+     {
+         EnetUtils_printf(
+-            "PHY %u: phase1 PSF summary ingested=%u storedTx=%u storedRx=%u rejectShort=%u rejectHdr=%u rejectTxShort=%u rejectRxShort=%u dropEvent=%u dropUnsupported=%u ringCount=%u ringWrite=%u nextStoreIdx=%u\r\n",
++            "PHY %u: phase1 PSF summary ingested=%u storedTx=%u storedRx=%u matchedTx=%u txUnmatched=%u waitReg=%u waitExpire=%u rxReady=%u txReady=%u waitCount=%u rxHit=%u rxMiss=%u txHit=%u txMiss=%u rejectShort=%u rejectHdr=%u rejectTxShort=%u rejectRxShort=%u dropEvent=%u dropUnsupported=%u nextStoreIdx=%u\r\n",
+             hPhy->addr,
+             gDp83tc812PsfIngestCnt,
+             gDp83tc812PsfStoredTxCnt,
+             gDp83tc812PsfStoredRxCnt,
++            gDp83tc812PsfMatchedTxCnt,
++            gDp83tc812PsfDroppedTxUnmatchedCnt,
++            gDp83tc812PsfWaitRegCnt,
++            gDp83tc812PsfWaitExpireCnt,
++            gDp83tc812RxReadyQ.count,
++            gDp83tc812TxReadyQ.count,
++            gDp83tc812TxWaitCount,
++            gDp83tc812PsfRxLookupHitCnt,
++            gDp83tc812PsfRxLookupMissCnt,
++            gDp83tc812PsfTxLookupHitCnt,
++            gDp83tc812PsfTxLookupMissCnt,
+             gDp83tc812PsfRejectShortCnt,
+             gDp83tc812PsfRejectHdrCnt,
+             gDp83tc812PsfRejectTxShortCnt,
+             gDp83tc812PsfRejectRxShortCnt,
+             gDp83tc812PsfDropEventCnt,
+             gDp83tc812PsfDropUnsupportedCnt,
+-            gDp83tc812PsfCount,
+-            gDp83tc812PsfWriteIdx,
+             gDp83tc812PsfStoreSeq);
+     }
+ }
+@@ -340,18 +406,185 @@ static bool Dp83tc812_isEventPsfType(uint16_t psfType)
+     return ((psfType == DP83TC812_PSF_EVENT_TYPE0) || (psfType == DP83TC812_PSF_EVENT_TYPE1));
+ }
+ 
++static uint32_t Dp83tc812_nextOracleTick(void)
++{
++    gDp83tc812OracleTick++;
++
++    if (gDp83tc812OracleTick == 0U)
++    {
++        gDp83tc812OracleTick = 1U;
++    }
++
++    return gDp83tc812OracleTick;
++}
++
++static void Dp83tc812_ageTxWaitQ(uint32_t nowTick)
++{
++    uint32_t i;
++
++    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
++    {
++        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
++
++        if (waitEntry->valid && (nowTick >= waitEntry->deadlineTick))
++        {
++            waitEntry->valid = false;
++            if (gDp83tc812TxWaitCount > 0U)
++            {
++                gDp83tc812TxWaitCount--;
++            }
++            gDp83tc812PsfWaitExpireCnt++;
++        }
++    }
++}
++
++static void Dp83tc812_pushReadyEntry(Dp83tc812_PtpReadyQueue *queue,
++                                     const Dp83tc812_PtpTsEntry *entry)
++{
++    Dp83tc812_PtpTsEntry *dst = &queue->entries[queue->writeIdx];
++
++    if (!dst->valid)
++    {
++        queue->count++;
++    }
++
++    *dst = *entry;
++    dst->valid = true;
++    queue->writeIdx = (queue->writeIdx + 1U) % DP83TC812_PSF_RING_DEPTH;
++}
++
++static bool Dp83tc812_domainMatches(uint8_t entryDomain, uint8_t queryDomain)
++{
++    return ((entryDomain == DP83TC812_PTP_DOMAIN_WILDCARD) || (entryDomain == queryDomain));
++}
++
++static int32_t Dp83tc812_popReadyTs(Dp83tc812_PtpReadyQueue *queue,
++                                    Enet_MacPort macPort,
++                                    uint8_t msgType,
++                                    uint16_t seqId,
++                                    uint8_t domain,
++                                    uint64_t *ts)
++{
++    uint32_t i;
++
++    for (i = 0U; i < DP83TC812_PSF_RING_DEPTH; i++)
++    {
++        Dp83tc812_PtpTsEntry *entry = &queue->entries[i];
++
++        if (entry->valid &&
++            (entry->macPort == macPort) &&
++            (entry->msgType == msgType) &&
++            (entry->seqId == seqId) &&
++            Dp83tc812_domainMatches(entry->domain, domain))
++        {
++            *ts = entry->ts64;
++            entry->valid = false;
++            if (queue->count > 0U)
++            {
++                queue->count--;
++            }
++            return ENETPHY_SOK;
++        }
++    }
++
++    return ENET_ENOTFOUND;
++}
++
++static int32_t Dp83tc812_registerTxWait(Enet_MacPort macPort,
++                                        uint8_t msgType,
++                                        uint16_t seqId,
++                                        uint8_t domain)
++{
++    uint32_t nowTick = Dp83tc812_nextOracleTick();
++    uint32_t i;
++    int32_t slot = -1;
++
++    Dp83tc812_ageTxWaitQ(nowTick);
++
++    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
++    {
++        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
++
++        if (waitEntry->valid &&
++            (waitEntry->macPort == macPort) &&
++            (waitEntry->msgType == msgType) &&
++            (waitEntry->seqId == seqId) &&
++            (waitEntry->domain == domain))
++        {
++            waitEntry->deadlineTick = nowTick + DP83TC812_PTP_WAIT_TTL_TICKS;
++            return ENETPHY_SOK;
++        }
++
++        if ((!waitEntry->valid) && (slot < 0))
++        {
++            slot = (int32_t)i;
++        }
++    }
++
++    if (slot < 0)
++    {
++        slot = (int32_t)gDp83tc812TxWaitWriteIdx;
++    }
++
++    if (!gDp83tc812TxWaitQ[slot].valid)
++    {
++        gDp83tc812TxWaitCount++;
++    }
++
++    gDp83tc812TxWaitQ[slot].valid = true;
++    gDp83tc812TxWaitQ[slot].macPort = macPort;
++    gDp83tc812TxWaitQ[slot].msgType = msgType;
++    gDp83tc812TxWaitQ[slot].seqId = seqId;
++    gDp83tc812TxWaitQ[slot].domain = domain;
++    gDp83tc812TxWaitQ[slot].deadlineTick = nowTick + DP83TC812_PTP_WAIT_TTL_TICKS;
++    gDp83tc812TxWaitQ[slot].waitIndex = gDp83tc812PsfWaitSeq++;
++    gDp83tc812TxWaitWriteIdx = ((uint32_t)slot + 1U) % DP83TC812_PTP_WAITQ_DEPTH;
++    gDp83tc812PsfWaitRegCnt++;
++
++    return ENETPHY_SOK;
++}
++
++static bool Dp83tc812_matchTxWait(Enet_MacPort macPort,
++                                  uint8_t msgType,
++                                  uint16_t seqId,
++                                  uint8_t *domain)
++{
++    uint32_t nowTick = Dp83tc812_nextOracleTick();
++    uint32_t i;
++
++    Dp83tc812_ageTxWaitQ(nowTick);
++
++    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
++    {
++        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
++
++        if (waitEntry->valid &&
++            (waitEntry->macPort == macPort) &&
++            (waitEntry->msgType == msgType) &&
++            (waitEntry->seqId == seqId))
++        {
++            *domain = waitEntry->domain;
++            waitEntry->valid = false;
++            if (gDp83tc812TxWaitCount > 0U)
++            {
++                gDp83tc812TxWaitCount--;
++            }
++            return true;
++        }
++    }
++
++    return false;
++}
++
+ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             Enet_MacPort macPort,
+                                             const uint8_t *frame,
+                                             uint32_t frameLen)
+ {
+-    Dp83tc812_PsfStoreEntry *entry;
+     const uint8_t *payload;
+     uint32_t payloadLen;
+     uint16_t ptpHdr;
+     uint16_t psfType;
+-    uint32_t slot;
+-    bool wrapped;
+     bool printThisFrame;
+     int32_t status = ENETPHY_SOK;
+ 
+@@ -428,48 +661,67 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+             }
+             else
+             {
+-                slot = gDp83tc812PsfWriteIdx;
+-                entry = &gDp83tc812PsfRing[slot];
+-                memset(entry, 0, sizeof(*entry));
+-                entry->valid = true;
+-                entry->psfType = psfType;
+-                entry->macPort = macPort;
+-                entry->ts64 = Dp83tc812_decodeTs64(payload);
+-                entry->storeIndex = gDp83tc812PsfStoreSeq++;
++                Dp83tc812_PtpTsEntry entry;
++                uint8_t domain = DP83TC812_PTP_DOMAIN_WILDCARD;
++                bool matchedWait = false;
++
++                memset(&entry, 0, sizeof(entry));
++                entry.valid = true;
++                entry.psfType = psfType;
++                entry.macPort = macPort;
++                entry.ts64 = Dp83tc812_decodeTs64(payload);
++                entry.domain = DP83TC812_PTP_DOMAIN_WILDCARD;
++                entry.storeIndex = gDp83tc812PsfStoreSeq++;
+                 if (payloadLen >= 12U)
+                 {
+                     const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
+-                    entry->seqId = Dp83tc812_readLe16(&payload[8U]);
+-                    entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
+-                    entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
+-                }
+-
+-                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
+-                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
+-                if (!wrapped)
+-                {
+-                    gDp83tc812PsfCount++;
++                    entry.seqId = Dp83tc812_readLe16(&payload[8U]);
++                    entry.msgType = (uint8_t)(msgTypeHash & 0x000FU);
++                    entry.hash = (msgTypeHash >> 4U) & 0x0FFFU;
++                    matchedWait = Dp83tc812_matchTxWait(macPort, entry.msgType, entry.seqId, &domain);
+                 }
+                 if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
+                 {
+                     gDp83tc812PsfStoredTxCnt++;
+                 }
+ 
+-                if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
+-                    (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
+-                    printThisFrame)
++                if (matchedWait)
+                 {
+-                    EnetUtils_printf(
+-                        "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
+-                        hPhy->addr,
+-                        slot,
+-                        entry->storeIndex,
+-                        gDp83tc812PsfCount,
+-                        wrapped ? 1U : 0U,
+-                        (unsigned long long)entry->ts64,
+-                        entry->seqId,
+-                        entry->msgType,
+-                        entry->hash);
++                    entry.domain = domain;
++                    Dp83tc812_pushReadyEntry(&gDp83tc812TxReadyQ, &entry);
++                    gDp83tc812PsfMatchedTxCnt++;
++
++                    if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
++                        (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
++                        printThisFrame)
++                    {
++                        EnetUtils_printf(
++                            "PHY %u: phase1 PSF store TX idx=%u txReady=%u ts64=%llu seqId=%u msgType=%u domain=%u hash=0x%03x\r\n",
++                            hPhy->addr,
++                            entry.storeIndex,
++                            gDp83tc812TxReadyQ.count,
++                            (unsigned long long)entry.ts64,
++                            entry.seqId,
++                            entry.msgType,
++                            entry.domain,
++                            entry.hash);
++                    }
++                }
++                else
++                {
++                    gDp83tc812PsfDroppedTxUnmatchedCnt++;
++                    if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
++                        (DP83TC812_PSF_DEBUG_PRINT_DROPS != 0U) &&
++                        printThisFrame)
++                    {
++                        EnetUtils_printf(
++                            "PHY %u: phase1 PSF drop TX unmatched ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
++                            hPhy->addr,
++                            (unsigned long long)entry.ts64,
++                            entry.seqId,
++                            entry.msgType,
++                            entry.hash);
++                    }
+                 }
+             }
+         }
+@@ -492,25 +744,20 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+             else
+             {
+                 const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
+-
+-                slot = gDp83tc812PsfWriteIdx;
+-                entry = &gDp83tc812PsfRing[slot];
+-                memset(entry, 0, sizeof(*entry));
+-                entry->valid = true;
+-                entry->psfType = psfType;
+-                entry->macPort = macPort;
+-                entry->ts64 = Dp83tc812_decodeTs64(payload);
+-                entry->seqId = Dp83tc812_readLe16(&payload[8U]);
+-                entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
+-                entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
+-                entry->storeIndex = gDp83tc812PsfStoreSeq++;
+-
+-                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
+-                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
+-                if (!wrapped)
+-                {
+-                    gDp83tc812PsfCount++;
+-                }
++                Dp83tc812_PtpTsEntry entry;
++
++                memset(&entry, 0, sizeof(entry));
++                entry.valid = true;
++                entry.psfType = psfType;
++                entry.macPort = macPort;
++                entry.ts64 = Dp83tc812_decodeTs64(payload);
++                entry.seqId = Dp83tc812_readLe16(&payload[8U]);
++                entry.msgType = (uint8_t)(msgTypeHash & 0x000FU);
++                entry.domain = DP83TC812_PTP_DOMAIN_WILDCARD;
++                entry.hash = (msgTypeHash >> 4U) & 0x0FFFU;
++                entry.storeIndex = gDp83tc812PsfStoreSeq++;
++
++                Dp83tc812_pushReadyEntry(&gDp83tc812RxReadyQ, &entry);
+                 if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
+                 {
+                     gDp83tc812PsfStoredRxCnt++;
+@@ -521,16 +768,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                     printThisFrame)
+                 {
+                     EnetUtils_printf(
+-                        "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
++                        "PHY %u: phase1 PSF store RX idx=%u rxReady=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
+                         hPhy->addr,
+-                        slot,
+-                        entry->storeIndex,
+-                        gDp83tc812PsfCount,
+-                        wrapped ? 1U : 0U,
+-                        (unsigned long long)entry->ts64,
+-                        entry->seqId,
+-                        entry->msgType,
+-                        entry->hash);
++                        entry.storeIndex,
++                        gDp83tc812RxReadyQ.count,
++                        (unsigned long long)entry.ts64,
++                        entry.seqId,
++                        entry.msgType,
++                        entry.hash);
+                 }
+             }
+         }
+@@ -569,6 +814,74 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+     return status;
+ }
+ 
++static int32_t Dp83tc812_waitPtpTxTime(EnetPhy_Handle hPhy,
++                                       Enet_MacPort macPort,
++                                       uint8_t msgType,
++                                       uint16_t seqId,
++                                       uint8_t domain)
++{
++    ENET_UNUSED(hPhy);
++    return Dp83tc812_registerTxWait(macPort, msgType, seqId, domain);
++}
++
++static int32_t Dp83tc812_getPtpTxTime(EnetPhy_Handle hPhy,
++                                      Enet_MacPort macPort,
++                                      uint8_t msgType,
++                                      uint16_t seqId,
++                                      uint8_t domain,
++                                      uint64_t *ts)
++{
++    int32_t status;
++
++    ENET_UNUSED(hPhy);
++
++    if (ts == NULL)
++    {
++        return ENETPHY_EBADARGS;
++    }
++
++    status = Dp83tc812_popReadyTs(&gDp83tc812TxReadyQ, macPort, msgType, seqId, domain, ts);
++    if (status == ENETPHY_SOK)
++    {
++        gDp83tc812PsfTxLookupHitCnt++;
++    }
++    else
++    {
++        gDp83tc812PsfTxLookupMissCnt++;
++    }
++
++    return status;
++}
++
++static int32_t Dp83tc812_getPtpRxTime(EnetPhy_Handle hPhy,
++                                      Enet_MacPort macPort,
++                                      uint8_t msgType,
++                                      uint16_t seqId,
++                                      uint8_t domain,
++                                      uint64_t *ts)
++{
++    int32_t status;
++
++    ENET_UNUSED(hPhy);
++
++    if (ts == NULL)
++    {
++        return ENETPHY_EBADARGS;
++    }
++
++    status = Dp83tc812_popReadyTs(&gDp83tc812RxReadyQ, macPort, msgType, seqId, domain, ts);
++    if (status == ENETPHY_SOK)
++    {
++        gDp83tc812PsfRxLookupHitCnt++;
++    }
++    else
++    {
++        gDp83tc812PsfRxLookupMissCnt++;
++    }
++
++    return status;
++}
++
+ /*We only need one master and one slave init script because we are only using one chip revision*/
+ /*! \brief Chip specific init scripts */
+ 
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
+index 1f85c70..aa8cb14 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
+@@ -217,6 +217,35 @@ typedef struct EnetPhy_Drv_s
+                                   const uint8_t *frame,
+                                   uint32_t frameLen);
+ 
++    /*!
++     * \brief Register a pending TX timestamp lookup for a future event packet.
++     */
++    int32_t (*waitPtpTxTime)(EnetPhy_Handle hPhy,
++                             Enet_MacPort macPort,
++                             uint8_t msgType,
++                             uint16_t seqId,
++                             uint8_t domain);
++
++    /*!
++     * \brief Retrieve a message-keyed TX timestamp from the PHY backend.
++     */
++    int32_t (*getPtpTxTime)(EnetPhy_Handle hPhy,
++                            Enet_MacPort macPort,
++                            uint8_t msgType,
++                            uint16_t seqId,
++                            uint8_t domain,
++                            uint64_t *ts);
++
++    /*!
++     * \brief Retrieve a message-keyed RX timestamp from the PHY backend.
++     */
++    int32_t (*getPtpRxTime)(EnetPhy_Handle hPhy,
++                            Enet_MacPort macPort,
++                            uint8_t msgType,
++                            uint16_t seqId,
++                            uint8_t domain,
++                            uint64_t *ts);
++
+     /*! Print PHY registers */
+     void (*printRegs)(EnetPhy_Handle hPhy);
+ } EnetPhy_Drv;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+index b092010..0a65175 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+@@ -122,6 +122,18 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 					  uint16_t seqId, uint8_t domain, uint64_t *ts);
+ 
++/**
++ * @brief Registers a future TX timestamp lookup for a specific outgoing message.
++ * @param hTSync Pointer to the LLDTSync instance.
++ * @param txPort Transmit port.
++ * @param msgType Message type.
++ * @param seqId Sequence ID.
++ * @param domain Domain number.
++ * @return LLDENET_E_OK if successful, an error code otherwise.
++ */
++int LLDTSyncWaitTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
++					   uint16_t seqId, uint8_t domain);
++
+ /**
+  * @brief Adjusts the frequency of the PTP clock.
+  * @param hTSync Pointer to the LLDTSync instance.
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+index b6ea850..72b71fd 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+@@ -51,6 +51,7 @@
+  * lldtsync.c
+ */
+ #include <enet_mcm.h>
++#include <include/core/enet_mod_phy.h>
+ #include "tilld/lldtsync.h"
+ #include "combase_private.h"
+ #include <tsn_gptp/gptpconf/xl4-extmod-xl4gptp.h>
+@@ -69,6 +70,50 @@ struct LLDTSync {
+ 	uint32_t coreId;
+ };
+ 
++static int32_t LLDTSync_tryPhyLookup(LLDTSync_t *hTSync,
++                                     uint32_t cmd,
++                                     uint8_t macPort,
++                                     int msgType,
++                                     uint16_t seqId,
++                                     uint8_t domain,
++                                     uint64_t *ts)
++{
++	int32_t status = ENET_SOK;
++	Enet_IoctlPrms prms;
++	EnetPhy_PtpTimestampInArgs inArgs;
++
++	memset(&inArgs, 0, sizeof(inArgs));
++	inArgs.macPort = (Enet_MacPort)macPort;
++	inArgs.msgType = (uint8_t)msgType;
++	inArgs.seqId = seqId;
++	inArgs.domain = domain;
++
++	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
++	ENET_IOCTL(hTSync->hEnet, hTSync->coreId, cmd, &prms, status);
++	return status;
++}
++
++static int32_t LLDTSync_tryPhyWait(LLDTSync_t *hTSync,
++                                   uint8_t macPort,
++                                   int msgType,
++                                   uint16_t seqId,
++                                   uint8_t domain)
++{
++	int32_t status = ENET_SOK;
++	Enet_IoctlPrms prms;
++	EnetPhy_PtpTimestampInArgs inArgs;
++
++	memset(&inArgs, 0, sizeof(inArgs));
++	inArgs.macPort = (Enet_MacPort)macPort;
++	inArgs.msgType = (uint8_t)msgType;
++	inArgs.seqId = seqId;
++	inArgs.domain = domain;
++
++	ENET_IOCTL_SET_IN_ARGS(&prms, &inArgs);
++	ENET_IOCTL(hTSync->hEnet, hTSync->coreId, ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP, &prms, status);
++	return status;
++}
++
+ #ifndef CB_LLDTSYNC_MMEM
+ #define CB_LLDTSYNC_MMEM lldtsync_mem
+ #endif
+@@ -132,6 +177,18 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+ 	if (Enet_isCpswFamily(hTSync->enetType) == false) {
+ 		return LLDENET_E_UNSUPPORT;
+ 	}
++
++	status = LLDTSync_tryPhyLookup(hTSync,
++								   ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP,
++								   rxPort,
++								   msgType,
++								   seqId,
++								   domain,
++								   ts);
++	if (status == ENET_SOK) {
++		return LLDENET_E_OK;
++	}
++
+ 	memset(&inArgs, 0, sizeof(inArgs));
+ 	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
+ 	inArgs.seqId   = seqId;
+@@ -158,6 +215,21 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 		return LLDENET_E_PARAM;
+ 	}
+ 
++	status = LLDTSync_tryPhyLookup(hTSync,
++								   ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP,
++								   txPort,
++								   msgType,
++								   seqId,
++								   domain,
++								   ts);
++	if (status == ENET_SOK) {
++		return LLDENET_E_OK;
++	}
++	if ((status != ENET_ENOTSUPPORTED) &&
++		(status != ENETPHY_ENOTSUPPORTED)) {
++		return LLDENET_E_IOCTL;
++	}
++
+ 	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
+ 	inArgs.seqId = seqId;
+ 	inArgs.portNum = txPort;
+@@ -173,6 +245,27 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 	return LLDENET_E_OK;
+ }
+ 
++int LLDTSyncWaitTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
++					   uint16_t seqId, uint8_t domain)
++{
++	int32_t status = ENET_SOK;
++
++	if (hTSync == NULL) {
++		return LLDENET_E_PARAM;
++	}
++
++	status = LLDTSync_tryPhyWait(hTSync, txPort, msgType, seqId, domain);
++	if ((status == ENET_SOK) ||
++		(status == ENET_ENOTSUPPORTED) ||
++		(status == ENETPHY_ENOTSUPPORTED) ||
++		(status == ENET_ENOTFOUND)) {
++		return LLDENET_E_OK;
++	}
++
++	UB_LOG(UBL_ERROR,"Enet_ioctl PTP_WAIT_TX_TIMESTAMP failed %d\n", status);
++	return LLDENET_E_IOCTL;
++}
++
+ int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
+ {
+ 	int32_t status = ENET_SOK;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+index 63c19e9..a623a00 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+@@ -487,6 +487,11 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
+ 	}
+ 	if (msgtype < 8) {
+ 		txts_info_t txts_info;
++		(void)LLDTSyncWaitTxTime(gpnet->lldtsync,
++								 ndev->addr.macport,
++								 msgtype,
++								 seqid,
++								 domain);
+ 		txts_info.ndev_index = ndev_index;
+ 		txts_info.seqid = seqid;
+ 		txts_info.msgtype = msgtype;
+@@ -628,7 +633,8 @@ static int process_txts(gptpnet_data_t *gpnet)
+ 		res = LLDTSyncGetTxTime(gpnet->lldtsync, macport, txts_info.msgtype,
+ 				txts_info.seqid, txts_info.domain, &ts);
+ 		if (res != LLDENET_E_OK) {
+-			continue;
++			(void)push_txts_info(&gpnet->txts_queue, &txts_info);
++			break;
+ 		}
+ 		provide_txts(gpnet, &txts_info, ts);
+ 	}
