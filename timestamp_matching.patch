@@ -1,3 +1,5 @@
+NOTE: Revert all unstaged changes before applying.
+-->8 -->8 -->8
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
 index 73cf2a0..c130ed7 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
@@ -95,10 +97,25 @@ index 82e4102..764187a 100644
  
 -
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
-index 4457cd1..3b59e14 100644
+index 4457cd1..ff65102 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
-@@ -273,3 +273,94 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(E
+@@ -78,6 +78,14 @@
+ /* ========================================================================== */
+ /*                          Function Definitions                              */
+ /* ========================================================================== */
++static bool EnetPhyMdioDflt_isExpectedPtpLookupStatus(int32_t status)
++{
++    return (status == ENET_SOK) ||
++           (status == ENET_ENOTFOUND) ||
++           (status == ENET_ENOTSUPPORTED) ||
++           (status == ENETPHY_ENOTSUPPORTED);
++}
++
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_GET_ID(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms)
+ {
+ #if ((ENET_CFG_TRACE_LEVEL >= ENET_CFG_TRACE_LEVEL_ERROR) && ENET_CFG_IS_OFF(TRACE_DISABLE_INFOSTRING))
+@@ -273,3 +281,94 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(E
                       macPortId, status);
      return status;
  }
@@ -126,7 +143,7 @@ index 4457cd1..3b59e14 100644
 +                                           inArgs->domain);
 +    }
 +
-+    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
 +                     "Port %u: Failed to register PHY TX timestamp wait: %d\n",
 +                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
 +    return status;
@@ -157,7 +174,7 @@ index 4457cd1..3b59e14 100644
 +                                          outTs);
 +    }
 +
-+    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
 +                     "Port %u: Failed to get PHY TX timestamp: %d\n",
 +                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
 +    return status;
@@ -188,7 +205,7 @@ index 4457cd1..3b59e14 100644
 +                                          outTs);
 +    }
 +
-+    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
 +                     "Port %u: Failed to get PHY RX timestamp: %d\n",
 +                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
 +    return status;
@@ -230,7 +247,7 @@ index bd3db78..4154207 100644
  #endif
  
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
-index 9f611d6..540298d 100644
+index 9f611d6..275c2f0 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
 @@ -121,6 +121,26 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
@@ -578,7 +595,7 @@ index 9f611d6..540298d 100644
      bool printThisFrame;
      int32_t status = ENETPHY_SOK;
  
-@@ -428,48 +661,67 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -428,48 +661,71 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
              }
              else
              {
@@ -603,6 +620,10 @@ index 9f611d6..540298d 100644
 +                entry.storeIndex = gDp83tc812PsfStoreSeq++;
                  if (payloadLen >= 12U)
                  {
++                    /* DP83TC815 Table 7-4 / PTP_TXCFG0[14]:
++                     * TX seqId/msgType/hash are optional identity fields latched into PSF.
++                     * Keep this parser conservative until the PSF layout is fully validated.
++                     */
                      const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
 -                    entry->seqId = Dp83tc812_readLe16(&payload[8U]);
 -                    entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
@@ -678,9 +699,13 @@ index 9f611d6..540298d 100644
                  }
              }
          }
-@@ -492,25 +744,20 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -491,26 +747,24 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+             }
              else
              {
++                /* DP83TC815 PTP_RXTS explicitly records sequenceId and
++                 * messageType/source_hash after the timestamp fields.
++                 */
                  const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
 -
 -                slot = gDp83tc812PsfWriteIdx;
@@ -718,7 +743,7 @@ index 9f611d6..540298d 100644
                  if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
                  {
                      gDp83tc812PsfStoredRxCnt++;
-@@ -521,16 +768,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -521,16 +775,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
                      printThisFrame)
                  {
                      EnetUtils_printf(
@@ -742,7 +767,7 @@ index 9f611d6..540298d 100644
                  }
              }
          }
-@@ -569,6 +814,74 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+@@ -569,6 +821,74 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
      return status;
  }
  
@@ -881,7 +906,7 @@ index b092010..0a65175 100644
   * @brief Adjusts the frequency of the PTP clock.
   * @param hTSync Pointer to the LLDTSync instance.
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
-index b6ea850..85dab86 100644
+index b6ea850..1755faa 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
 @@ -51,6 +51,7 @@
@@ -892,10 +917,72 @@ index b6ea850..85dab86 100644
  #include "tilld/lldtsync.h"
  #include "combase_private.h"
  #include <tsn_gptp/gptpconf/xl4-extmod-xl4gptp.h>
-@@ -69,6 +70,64 @@ struct LLDTSync {
+@@ -67,8 +68,126 @@ struct LLDTSync {
+ 	uint32_t instId;
+ 	Enet_Handle hEnet;
  	uint32_t coreId;
++	bool phyTxLookupEnabled;
++	bool phyRxLookupEnabled;
++	bool phyWaitEnabled;
++	uint32_t phyTxHitCnt;
++	uint32_t phyTxMissCnt;
++	uint32_t phyTxErrCnt;
++	uint32_t phyTxCompareCnt;
++	uint64_t phyTxLastDeltaNs;
++	uint32_t phyRxHitCnt;
++	uint32_t phyRxMissCnt;
++	uint32_t phyRxErrCnt;
++	uint32_t phyRxCompareCnt;
++	uint64_t phyRxLastDeltaNs;
++	uint32_t phyWaitOkCnt;
++	uint32_t phyWaitMissCnt;
++	uint32_t phyWaitErrCnt;
  };
  
++#define LLDTSYNC_PHY_LOG_BURST_LIMIT      (4U)
++#define LLDTSYNC_PHY_LOG_PERIOD           (64U)
++#define LLDTSYNC_PHY_SUMMARY_PERIOD       (64U)
++
++static bool LLDTSync_shouldLogCounter(uint32_t counter)
++{
++	return (counter <= LLDTSYNC_PHY_LOG_BURST_LIMIT) ||
++	       ((counter % LLDTSYNC_PHY_LOG_PERIOD) == 0U);
++}
++
++static uint64_t LLDTSync_absDiffU64(uint64_t lhs, uint64_t rhs)
++{
++	return (lhs >= rhs) ? (lhs - rhs) : (rhs - lhs);
++}
++
++static void LLDTSync_maybeLogSummary(LLDTSync_t *hTSync)
++{
++	uint32_t opCount;
++
++	opCount = hTSync->phyTxHitCnt + hTSync->phyTxMissCnt + hTSync->phyTxErrCnt +
++			  hTSync->phyRxHitCnt + hTSync->phyRxMissCnt + hTSync->phyRxErrCnt +
++			  hTSync->phyWaitOkCnt + hTSync->phyWaitMissCnt + hTSync->phyWaitErrCnt;
++	if ((opCount != 0U) && ((opCount % LLDTSYNC_PHY_SUMMARY_PERIOD) == 0U))
++	{
++		UB_LOG(UBL_INFO,
++			   "%s: PHY shadow summary tx(hit=%u miss=%u err=%u cmp=%u lastDelta=%lluns) "
++			   "rx(hit=%u miss=%u err=%u cmp=%u lastDelta=%lluns) wait(ok=%u miss=%u err=%u)\n",
++			   __func__,
++			   hTSync->phyTxHitCnt,
++			   hTSync->phyTxMissCnt,
++			   hTSync->phyTxErrCnt,
++			   hTSync->phyTxCompareCnt,
++			   (unsigned long long)hTSync->phyTxLastDeltaNs,
++			   hTSync->phyRxHitCnt,
++			   hTSync->phyRxMissCnt,
++			   hTSync->phyRxErrCnt,
++			   hTSync->phyRxCompareCnt,
++			   (unsigned long long)hTSync->phyRxLastDeltaNs,
++			   hTSync->phyWaitOkCnt,
++			   hTSync->phyWaitMissCnt,
++			   hTSync->phyWaitErrCnt);
++	}
++}
++
 +static int32_t LLDTSync_tryPhyLookup(LLDTSync_t *hTSync,
 +                                     uint32_t cmd,
 +                                     uint8_t macPort,
@@ -957,51 +1044,206 @@ index b6ea850..85dab86 100644
  #ifndef CB_LLDTSYNC_MMEM
  #define CB_LLDTSYNC_MMEM lldtsync_mem
  #endif
-@@ -132,6 +191,18 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+@@ -95,6 +214,9 @@ LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg)
+ 	hTSync->enetType = (Enet_Type)cfg->enetType;
+ 	hTSync->instId = cfg->instId;
+ 	hTSync->coreId = EnetSoc_getCoreId();
++	hTSync->phyTxLookupEnabled = true;
++	hTSync->phyRxLookupEnabled = true;
++	hTSync->phyWaitEnabled = true;
+ 
+ 	EnetApp_acquireHandleInfo(hTSync->enetType, cfg->instId, &handleInfo);
+ 	hTSync->hEnet = handleInfo.hEnet;
+@@ -123,7 +245,10 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+ 					  uint16_t seqId, uint8_t domain, uint64_t *ts)
+ {
+ 	int32_t status = ENET_SOK;
++	int32_t phyStatus = ENET_ENOTFOUND;
+ 	EnetTimeSync_GetEthTimestampInArgs inArgs;
++	uint64_t phyTs = 0ULL;
++	uint64_t cptsTs = 0ULL;
+ 
+ 	if ((hTSync == NULL) || (ts == NULL)) {
+ 		return LLDENET_E_PARAM;
+@@ -132,17 +257,82 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
  	if (Enet_isCpswFamily(hTSync->enetType) == false) {
  		return LLDENET_E_UNSUPPORT;
  	}
 +
-+	status = LLDTSync_tryPhyLookup(hTSync,
-+								   ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP,
-+								   rxPort,
-+								   msgType,
-+								   seqId,
-+								   domain,
-+								   ts);
-+	if (status == ENET_SOK) {
-+		return LLDENET_E_OK;
++	if (hTSync->phyRxLookupEnabled)
++	{
++		phyStatus = LLDTSync_tryPhyLookup(hTSync,
++										  ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP,
++										  rxPort,
++										  msgType,
++										  seqId,
++										  domain,
++										  &phyTs);
++		if (phyStatus == ENET_SOK)
++		{
++			hTSync->phyRxHitCnt++;
++		}
++		else if ((phyStatus == ENET_ENOTSUPPORTED) ||
++				 (phyStatus == ENETPHY_ENOTSUPPORTED))
++		{
++			hTSync->phyRxLookupEnabled = false;
++			UB_LOG(UBL_INFO,
++				   "%s: PHY RX lookup unsupported, using CPTS as the live timestamp source\n",
++				   __func__);
++		}
++		else if (phyStatus == ENET_ENOTFOUND)
++		{
++			hTSync->phyRxMissCnt++;
++			if (LLDTSync_shouldLogCounter(hTSync->phyRxMissCnt))
++			{
++				UB_LOG(UBL_INFO,
++					   "%s: PHY RX timestamp unavailable for port=%u msgType=%d seqId=%u domain=%u, using CPTS\n",
++					   __func__, rxPort, msgType, seqId, domain);
++			}
++		}
++		else
++		{
++			hTSync->phyRxErrCnt++;
++			if (LLDTSync_shouldLogCounter(hTSync->phyRxErrCnt))
++			{
++				UB_LOG(UBL_WARN,
++					   "%s: PHY RX lookup failed for port=%u msgType=%d seqId=%u domain=%u (status=%d), using CPTS\n",
++					   __func__, rxPort, msgType, seqId, domain, phyStatus);
++			}
++		}
 +	}
 +
  	memset(&inArgs, 0, sizeof(inArgs));
  	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
  	inArgs.seqId   = seqId;
-@@ -158,6 +229,21 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 	inArgs.portNum = rxPort;
+ 	inArgs.domain  = domain;
+ 
+-	status = EnetApp_getRxTimeStamp(hTSync->hEnet, hTSync->coreId, &inArgs, ts);
++	status = EnetApp_getRxTimeStamp(hTSync->hEnet, hTSync->coreId, &inArgs, &cptsTs);
+ 	if (status != ENET_SOK) {
+ 		UB_LOG(UBL_ERROR,"Enet_ioctl GET_ETH_RX_TIMESTAMP failed %d\n", status);
+ 		return LLDENET_E_IOCTL;
+ 	}
++	*ts = cptsTs;
++
++	if (phyStatus == ENET_SOK)
++	{
++		hTSync->phyRxCompareCnt++;
++		hTSync->phyRxLastDeltaNs = LLDTSync_absDiffU64(cptsTs, phyTs);
++		if (LLDTSync_shouldLogCounter(hTSync->phyRxCompareCnt))
++		{
++			UB_LOG(UBL_INFO,
++				   "%s: PHY RX shadow compare port=%u msgType=%d seqId=%u domain=%u cpts=%lluns phy=%lluns delta=%lluns\n",
++				   __func__,
++				   rxPort,
++				   msgType,
++				   seqId,
++				   domain,
++				   (unsigned long long)cptsTs,
++				   (unsigned long long)phyTs,
++				   (unsigned long long)hTSync->phyRxLastDeltaNs);
++		}
++	}
++	LLDTSync_maybeLogSummary(hTSync);
+ 
+ 	return LLDENET_E_OK;
+ }
+@@ -151,25 +341,146 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 					  uint16_t seqId, uint8_t domain, uint64_t *ts)
+ {
+ 	int32_t status = ENET_SOK;
++	int32_t phyStatus = ENET_ENOTFOUND;
+ 	Enet_IoctlPrms prms;
+ 	EnetTimeSync_GetEthTimestampInArgs inArgs;
++	uint64_t phyTs = 0ULL;
++	uint64_t cptsTs = 0ULL;
+ 
+ 	if ((hTSync == NULL) || (ts == NULL)) {
  		return LLDENET_E_PARAM;
  	}
  
-+	status = LLDTSync_tryPhyLookup(hTSync,
-+								   ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP,
-+								   txPort,
-+								   msgType,
-+								   seqId,
-+								   domain,
-+								   ts);
-+	if (status == ENET_SOK) {
-+		return LLDENET_E_OK;
-+	}
-+	if ((status != ENET_ENOTSUPPORTED) &&
-+		(status != ENETPHY_ENOTSUPPORTED)) {
-+		return LLDENET_E_IOCTL;
++	if (hTSync->phyTxLookupEnabled)
++	{
++		phyStatus = LLDTSync_tryPhyLookup(hTSync,
++										  ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP,
++										  txPort,
++										  msgType,
++										  seqId,
++										  domain,
++										  &phyTs);
++		if (phyStatus == ENET_SOK)
++		{
++			hTSync->phyTxHitCnt++;
++		}
++		else if ((phyStatus == ENET_ENOTSUPPORTED) ||
++				 (phyStatus == ENETPHY_ENOTSUPPORTED))
++		{
++			hTSync->phyTxLookupEnabled = false;
++			UB_LOG(UBL_INFO,
++				   "%s: PHY TX lookup unsupported, using CPTS as the live timestamp source\n",
++				   __func__);
++		}
++		else if (phyStatus == ENET_ENOTFOUND)
++		{
++			hTSync->phyTxMissCnt++;
++			if (LLDTSync_shouldLogCounter(hTSync->phyTxMissCnt))
++			{
++				UB_LOG(UBL_INFO,
++					   "%s: PHY TX timestamp unavailable for port=%u msgType=%d seqId=%u domain=%u, using CPTS\n",
++					   __func__, txPort, msgType, seqId, domain);
++			}
++		}
++		else
++		{
++			hTSync->phyTxErrCnt++;
++			if (LLDTSync_shouldLogCounter(hTSync->phyTxErrCnt))
++			{
++				UB_LOG(UBL_WARN,
++					   "%s: PHY TX lookup failed for port=%u msgType=%d seqId=%u domain=%u (status=%d), using CPTS\n",
++					   __func__, txPort, msgType, seqId, domain, phyStatus);
++			}
++		}
 +	}
 +
++	memset(&inArgs, 0, sizeof(inArgs));
  	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
  	inArgs.seqId = seqId;
  	inArgs.portNum = txPort;
-@@ -173,6 +259,27 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
- 	return LLDENET_E_OK;
- }
+ 	inArgs.domain  = domain;
  
+-	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
++	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, &cptsTs);
+ 	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
+ 			   ENET_TIMESYNC_IOCTL_GET_ETH_TX_TIMESTAMP, &prms, status);
+ 	if (status != ENET_SOK) {
+ 		UB_LOG(UBL_ERROR,"Enet_ioctl GET_ETH_TX_TIMESTAMP failed %d\n", status);
+ 		return LLDENET_E_IOCTL;
+ 	}
++	*ts = cptsTs;
++
++	if (phyStatus == ENET_SOK)
++	{
++		hTSync->phyTxCompareCnt++;
++		hTSync->phyTxLastDeltaNs = LLDTSync_absDiffU64(cptsTs, phyTs);
++		if (LLDTSync_shouldLogCounter(hTSync->phyTxCompareCnt))
++		{
++			UB_LOG(UBL_INFO,
++				   "%s: PHY TX shadow compare port=%u msgType=%d seqId=%u domain=%u cpts=%lluns phy=%lluns delta=%lluns\n",
++				   __func__,
++				   txPort,
++				   msgType,
++				   seqId,
++				   domain,
++				   (unsigned long long)cptsTs,
++				   (unsigned long long)phyTs,
++				   (unsigned long long)hTSync->phyTxLastDeltaNs);
++		}
++	}
++	LLDTSync_maybeLogSummary(hTSync);
++	return LLDENET_E_OK;
++}
++
 +int LLDTSyncWaitTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
 +					   uint16_t seqId, uint8_t domain)
 +{
@@ -1011,44 +1253,123 @@ index b6ea850..85dab86 100644
 +		return LLDENET_E_PARAM;
 +	}
 +
-+	status = LLDTSync_tryPhyWait(hTSync, txPort, msgType, seqId, domain);
-+	if ((status == ENET_SOK) ||
-+		(status == ENET_ENOTSUPPORTED) ||
-+		(status == ENETPHY_ENOTSUPPORTED) ||
-+		(status == ENET_ENOTFOUND)) {
++	if (!hTSync->phyWaitEnabled)
++	{
 +		return LLDENET_E_OK;
 +	}
 +
-+	UB_LOG(UBL_ERROR,"Enet_ioctl PTP_WAIT_TX_TIMESTAMP failed %d\n", status);
-+	return LLDENET_E_IOCTL;
-+}
++	status = LLDTSync_tryPhyWait(hTSync, txPort, msgType, seqId, domain);
++	if (status == ENET_SOK) {
++		hTSync->phyWaitOkCnt++;
++		LLDTSync_maybeLogSummary(hTSync);
++		return LLDENET_E_OK;
++	}
++	if ((status == ENET_ENOTSUPPORTED) ||
++		(status == ENETPHY_ENOTSUPPORTED))
++	{
++		hTSync->phyWaitEnabled = false;
++		UB_LOG(UBL_INFO,
++			   "%s: PHY TX wait unsupported, continuing with CPTS-only live timestamps\n",
++			   __func__);
++		return LLDENET_E_OK;
++	}
++	if (status == ENET_ENOTFOUND)
++	{
++		hTSync->phyWaitMissCnt++;
++		if (LLDTSync_shouldLogCounter(hTSync->phyWaitMissCnt))
++		{
++			UB_LOG(UBL_INFO,
++				   "%s: PHY TX wait not registered for port=%u msgType=%d seqId=%u domain=%u, continuing with CPTS\n",
++				   __func__, txPort, msgType, seqId, domain);
++		}
++		LLDTSync_maybeLogSummary(hTSync);
++		return LLDENET_E_OK;
++	}
 +
- int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
- {
- 	int32_t status = ENET_SOK;
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-index 63c19e9..a623a00 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-@@ -487,6 +487,11 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
- 	}
- 	if (msgtype < 8) {
- 		txts_info_t txts_info;
-+		(void)LLDTSyncWaitTxTime(gpnet->lldtsync,
-+								 ndev->addr.macport,
-+								 msgtype,
-+								 seqid,
-+								 domain);
- 		txts_info.ndev_index = ndev_index;
- 		txts_info.seqid = seqid;
- 		txts_info.msgtype = msgtype;
-@@ -628,7 +633,8 @@ static int process_txts(gptpnet_data_t *gpnet)
- 		res = LLDTSyncGetTxTime(gpnet->lldtsync, macport, txts_info.msgtype,
- 				txts_info.seqid, txts_info.domain, &ts);
- 		if (res != LLDENET_E_OK) {
--			continue;
-+			(void)push_txts_info(&gpnet->txts_queue, &txts_info);
-+			break;
- 		}
- 		provide_txts(gpnet, &txts_info, ts);
- 	}
++	hTSync->phyWaitErrCnt++;
++	if (LLDTSync_shouldLogCounter(hTSync->phyWaitErrCnt))
++	{
++		UB_LOG(UBL_WARN,
++			   "%s: PHY TX wait failed for port=%u msgType=%d seqId=%u domain=%u (status=%d), continuing with CPTS\n",
++			   __func__, txPort, msgType, seqId, domain, status);
++	}
++	LLDTSync_maybeLogSummary(hTSync);
+ 	return LLDENET_E_OK;
+ }
+ 
+diff --git a/notes/dp83tc815_ptp_psf_notes.md b/notes/dp83tc815_ptp_psf_notes.md
+new file mode 100755
+index 0000000..5137784
+--- /dev/null
++++ b/notes/dp83tc815_ptp_psf_notes.md
+@@ -0,0 +1,70 @@
++# DP83TC815 PTP / PSF Notes
++
++This note is a working reference for the DP83TC81x PSF-backed timestamp work in this tree.
++It is intentionally short and only keeps the details that matter for parser and matcher changes.
++
++## Key datasheet points
++
++- Source: `PHY datasheets/dp83tc815_Datasheet_text_only.txt`
++- Table 7-4 lists the timestamp-related registers:
++  - `PTP_TXCFG0` `0x0D12`
++  - `PTP_TXTS` `0x0D08`
++  - `PTP_RXTS` `0x0D09`
++  - `PTP_RXHASH` `0x0D2B`
++  - `PSF_CFG0..4` `0x0D14`, `0x0D21`, `0x0D22`, `0x0D23`, `0x0D24`
++
++## TX timestamp model
++
++- `PTP_TXTS` is only a timestamp queue.
++- The datasheet text says the host normally knows transmit order, so only the timestamp needs to be recorded.
++- Extra TX identity is optional.
++- `PTP_TXCFG0[14]` `TX TimeStamp Info Enable` enables latching:
++  - `messageType`
++  - `hash`
++  - `sequenceId`
++  - along with the TX timestamp, and transmitting those fields through PSF.
++
++Implication:
++
++- TX `seqId/msgType/hash` matching must be treated as a PSF-format feature gated by `PTP_TXCFG0[14]`.
++- Do not assume `PTP_TXTS` itself carries TX identity.
++
++## RX timestamp model
++
++- `PTP_RXTS` explicitly provides six 16-bit reads in this order:
++  1. `Timestamp_ns[15:0]`
++  2. `Overflow_cnt[1:0], Timestamp_ns[29:16]`
++  3. `Timestamp_sec[15:0]`
++  4. `Timestamp_sec[31:16]`
++  5. `sequenceId[15:0]`
++  6. `messageType[3:0], source_hash[11:0]`
++
++Implication:
++
++- RX identity tuple is architecturally real and not just an implementation detail.
++- If PSF is being used as the transport for RX timestamps, the parser should be aligned with:
++  - `sequenceId`
++  - `messageType`
++  - `source_hash`
++
++## Receive hash filter
++
++- `PTP_RXHASH[12]` enables filtering based on the ten-octet `sourcePortIdentity` hash.
++- `PTP_RXHASH[11:0]` programs the expected hash value.
++
++Implication:
++
++- The `hash` field is part of the intended receive identification model.
++- We currently parse it in the driver, but the live matcher does not yet use it.
++
++## Current implementation guidance
++
++- Keep CPTS as the authoritative live timestamp source until PHY matching is proven.
++- Treat PHY RX/TX lookups as shadow diagnostics.
++- When changing PSF parsing:
++  - check the parser against the register model above
++  - do not infer stronger guarantees than the datasheet gives for TX identity
++  - prefer comments that say whether a field is:
++    - guaranteed by `PTP_RXTS`
++    - optional via `PTP_TXCFG0[14]`
++    - still inferred from observed PSF layout
