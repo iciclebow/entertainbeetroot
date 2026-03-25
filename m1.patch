@@ -1,0 +1,804 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
+index 73cf2a0..a163190 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
+@@ -206,6 +206,15 @@ enum EnetPhy_Ioctl_e
+      * - outArgs: None
+      */
+     ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME = ENET_PHY_PUBLIC_IOCTL(14U),
++
++    /*!
++     * \brief Get the fixed Ethernet header used by PHY PTP status frames.
++     *
++     * IOCTL parameters:
++     * -  inArgs: #EnetPhy_GenericInArgs
++     * - outArgs: #EnetPhy_PtpStatusFrameEthHdrOutArgs
++     */
++    ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR = ENET_PHY_PUBLIC_IOCTL(15U),
+ };
+ 
+ /*!
+@@ -292,6 +301,15 @@ typedef struct EnetPhy_PtpStatusFrameInArgs_s
+     uint32_t frameLen;
+ } EnetPhy_PtpStatusFrameInArgs;
+ 
++/*!
++ * \brief Output args for #ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR command.
++ */
++typedef struct EnetPhy_PtpStatusFrameEthHdrOutArgs_s
++{
++    /*! Fixed Ethernet header bytes used by PHY status frames */
++    uint8_t ethHdr[14U];
++} EnetPhy_PtpStatusFrameEthHdrOutArgs;
++
+ /* ========================================================================== */
+ /*                         Global Variables Declarations                      */
+ /* ========================================================================== */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+index 563bca4..5739d2a 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
+@@ -88,6 +88,7 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_READ_REG(EnetPhy_Handl
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_WRITE_REG(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PRINT_REGS(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
+ 
+ /* ========================================================================== */
+ /*                        Deprecated Function Declarations                    */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+index 82e4102..642033b 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
+@@ -158,6 +158,7 @@ static EnetPhyMdioDfltIoctlHandlerRegistry_t EnetPhyMdioDfltIoctlHandlerRegistry
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_C45_WRITE_REG),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PRINT_REGS),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR),
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT(ENET_PHY_IOCTL_REGISTER_HANDLER),
+ };
+ 
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+index 4457cd1..4e68c64 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
+@@ -273,3 +273,37 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(E
+                      macPortId, status);
+     return status;
+ }
++
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms)
++{
++    const EnetPhy_GenericInArgs *inArgs = (const EnetPhy_GenericInArgs *)prms->inArgs;
++    EnetPhy_PtpStatusFrameEthHdrOutArgs *outArgs = (EnetPhy_PtpStatusFrameEthHdrOutArgs *)prms->outArgs;
++    int32_t status = ENET_SOK;
++    uint32_t macPortId = 0U;
++
++    if ((inArgs == NULL) || (outArgs == NULL))
++    {
++        status = ENETPHY_EBADARGS;
++    }
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getStatusFrameEthHeader == NULL))
++    {
++        status = ENET_ENOTSUPPORTED;
++    }
++    else
++    {
++        status = hPhy->hDrv->getStatusFrameEthHeader(hPhy,
++                                                     inArgs->macPort,
++                                                     outArgs->ethHdr,
++                                                     sizeof(outArgs->ethHdr));
++    }
++
++    if (inArgs != NULL)
++    {
++        macPortId = ENET_MACPORT_ID(inArgs->macPort);
++    }
++
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to get PHY status frame header: %d\n",
++                     macPortId, status);
++    return status;
++}
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
+index 34295d3..290e67e 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
+@@ -106,5 +106,6 @@ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_READ_REG
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_WRITE_REG)
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PRINT_REGS)
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME)
++ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR)
+ 
+ 
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
+index bd3db78..95d3fed 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
+@@ -650,6 +650,10 @@ static Enet_IoctlValidate gEnetPhy_ioctlValidate[] =
+     ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
+                           sizeof(EnetPhy_PtpStatusFrameInArgs),
+                           0U),
++
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR,
++                          sizeof(EnetPhy_GenericInArgs),
++                          sizeof(EnetPhy_PtpStatusFrameEthHdrOutArgs)),
+ };
+ #endif
+ 
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
+index 9f611d6..63ba8df 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
+@@ -121,6 +121,11 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             const uint8_t *frame,
+                                             uint32_t frameLen);
+ 
++static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
++                                                 Enet_MacPort macPort,
++                                                 uint8_t *ethHdr,
++                                                 uint32_t ethHdrLen);
++
+ static void Dp83tc812_printRegs(EnetPhy_Handle hPhy);
+ 
+ /* ========================================================================== */
+@@ -138,6 +143,7 @@ EnetPhy_Drv gEnetPhyDrvDp83tc812 =
+     .readExtReg         = GenericPhy_readExtReg,
+     .writeExtReg        = GenericPhy_writeExtReg,
+     .processStatusFrame = Dp83tc812_processStatusFrame,
++    .getStatusFrameEthHeader = Dp83tc812_getStatusFrameEthHeader,
+     .printRegs          = Dp83tc812_printRegs,
+ };
+ 
+@@ -340,6 +346,23 @@ static bool Dp83tc812_isEventPsfType(uint16_t psfType)
+     return ((psfType == DP83TC812_PSF_EVENT_TYPE0) || (psfType == DP83TC812_PSF_EVENT_TYPE1));
+ }
+ 
++static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
++                                                 Enet_MacPort macPort,
++                                                 uint8_t *ethHdr,
++                                                 uint32_t ethHdrLen)
++{
++    (void)hPhy;
++    (void)macPort;
++
++    if ((ethHdr == NULL) || (ethHdrLen < sizeof(gDp83tc812PsfEthHdr)))
++    {
++        return ENETPHY_EBADARGS;
++    }
++
++    memcpy(ethHdr, gDp83tc812PsfEthHdr, sizeof(gDp83tc812PsfEthHdr));
++    return ENETPHY_SOK;
++}
++
+ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             Enet_MacPort macPort,
+                                             const uint8_t *frame,
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
+index 1f85c70..13a54e2 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
+@@ -217,6 +217,24 @@ typedef struct EnetPhy_Drv_s
+                                   const uint8_t *frame,
+                                   uint32_t frameLen);
+ 
++    /*!
++     * \brief Get the fixed Ethernet header used by PHY PTP status frames.
++     *
++     * Optional PHY-specific hook used by upper layers to identify status
++     * frames cheaply before forwarding them into processStatusFrame().
++     *
++     * \param hPhy       PHY device handle
++     * \param macPort    MAC port used for the query
++     * \param ethHdr     Output buffer for the Ethernet header bytes
++     * \param ethHdrLen  Size of output buffer in bytes
++     *
++     * \return \ref EnetPhy_ErrorCodes
++     */
++    int32_t (*getStatusFrameEthHeader)(EnetPhy_Handle hPhy,
++                                       Enet_MacPort macPort,
++                                       uint8_t *ethHdr,
++                                       uint32_t ethHdrLen);
++
+     /*! Print PHY registers */
+     void (*printRegs)(EnetPhy_Handle hPhy);
+ } EnetPhy_Drv;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
+index b37dffc..03097c3 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
+@@ -654,6 +654,15 @@ int cb_lld_recv(CB_SOCKET_T sfd, void *buf, int size,
+ 	return frame.size;
+ }
+ 
++int cb_lld_process_status_frames(CB_SOCKET_T sfd)
++{
++	if ((sfd == NULL) || (sfd->lldenet == NULL)) {
++		return -1;
++	}
++
++	return LLDEnetProcessStatusFrames(sfd->lldenet);
++}
++
+ typedef struct {
+ 	cb_lld_zerocopy_recv_cb_t cblld_recv_cb;
+ 	void *cblld_cbarg;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
+index 534c285..0b26832 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
+@@ -336,6 +336,13 @@ int cb_lld_sendto(CB_SOCKET_T sfd, void *sdata, int psize, int flags,
+ int cb_lld_recv(CB_SOCKET_T sfd, void *buf, int size,
+ 		CB_SOCKADDR_LL_T *addr, int addrsize);
+ 
++/**
++ * @brief Drain PHY status frames from the underlying owner RX queue.
++ * @param sfd socket fd
++ * @return >0 number of drained status frames, 0 if none were drained, <0 on error
++ */
++int cb_lld_process_status_frames(CB_SOCKET_T sfd);
++
+ typedef void (*cb_lld_zerocopy_recv_cb_t)(void *buf, int size,
+ 					CB_SOCKADDR_LL_T *addr, void *cbarg);
+ /**
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
+index 97e611a..3d3a0a4 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
+@@ -651,6 +651,12 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame)
+ 	return res;
+ }
+ 
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet)
++{
++	(void)hLLDEnet;
++	return 0;
++}
++
+ void LLDEnetCfgInit(LLDEnetCfg_t *cfg)
+ {
+ 	if (cfg == NULL) {
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
+index d678f36..f684199 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
+@@ -91,6 +91,9 @@ struct LLDEnet {
+ 	uint8_t dstMac[ENET_MAC_ADDR_LEN];
+ 	uint16_t vlanId;
+ 	uint16_t ethType;
++	bool phyStatusFrameHdrValid;
++	bool phyStatusFrameHdrUnavailable;
++	uint8_t phyStatusFrameHdr[14U];
+ };
+ 
+ #endif //LLDENET_PRIV_H_
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
+index c9435c3..14713aa 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
+@@ -52,6 +52,7 @@
+  */
+ #include <ti/drv/enet/examples/utils/include/enet_apputils.h>
+ #include <ti/drv/enet/examples/utils/include/enet_mcm.h>
++#include <include/core/enet_mod_phy.h>
+ #include "tilld/lldtsync.h"
+ #include "combase_private.h"
+ 
+@@ -159,6 +160,28 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 	return LLDENET_E_OK;
+ }
+ 
++int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
++							   uint8_t *frame, uint32_t size)
++{
++	(void)hEnet;
++	(void)coreId;
++	(void)macPort;
++	(void)frame;
++	(void)size;
++	return LLDENET_E_UNSUPPORT;
++}
++
++int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
++									uint8_t *ethHdr, uint32_t size)
++{
++	(void)hEnet;
++	(void)coreId;
++	(void)macPort;
++	(void)ethHdr;
++	(void)size;
++	return LLDENET_E_UNSUPPORT;
++}
++
+ int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
+ {
+ 	int32_t status = ENET_SOK;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
+index ee72a05..c8c9e4b 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
+@@ -281,6 +281,17 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame);
+ int LLDEnetRecvZeroCopy(LLDEnet_t *hLLDEnet,
+ 		void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg);
+ 
++/**
++ * @brief Drain PHY status frames from the owner RX ready queue.
++ *
++ * Status frames are forwarded into the PHY backend and removed from the
++ * owner queue. Non-status packets remain available to the normal receive path.
++ *
++ * @param hLLDEnet Pointer to the LLDEnet instance.
++ * @return >0 number of drained status frames, 0 if none were drained, <0 on error.
++ */
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet);
++
+ /**
+  * @brief Checks if the specified port is up.
+  *
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+index b092010..909cda7 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+@@ -122,6 +122,30 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 					  uint16_t seqId, uint8_t domain, uint64_t *ts);
+ 
++/**
++ * @brief Forward a PHY status frame into the active PHY backend.
++ * @param hEnet Pointer to Enet handle.
++ * @param coreId Enet core id.
++ * @param macPort MAC port on which the frame was received.
++ * @param frame Pointer to frame bytes.
++ * @param size Frame size in bytes.
++ * @return LLDENET_E_OK if successful, an error code otherwise.
++ */
++int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
++							   uint8_t *frame, uint32_t size);
++
++/**
++ * @brief Get the fixed Ethernet header used by PHY status frames.
++ * @param hEnet Pointer to Enet handle.
++ * @param coreId Enet core id.
++ * @param macPort MAC port used for the query.
++ * @param ethHdr Output buffer for Ethernet header bytes.
++ * @param size Size of output buffer in bytes.
++ * @return LLDENET_E_OK if successful, an error code otherwise.
++ */
++int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
++									uint8_t *ethHdr, uint32_t size);
++
+ /**
+  * @brief Adjusts the frequency of the PTP clock.
+  * @param hTSync Pointer to the LLDTSync instance.
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+index ac0dcea..e53d809 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+@@ -54,6 +54,7 @@
+ #include "lldenet_priv.h"
+ #include "combase_private.h"
+ #include "lldenetext.h"
++#include "tilld/lldtsync.h"
+ 
+ #ifndef LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
+ #define LLDENET_ENABLE_PTP_RX_OWNER_DEBUG         (1)
+@@ -971,6 +972,58 @@ static bool IsKnownPsfFrame(const uint8_t *buf, int size)
+ 		(memcmp(buf, phyStatusHdr, sizeof(phyStatusHdr)) == 0));
+ }
+ 
++static void LLDEnetLogStatusDrain(LLDEnet_t *hLLDEnet)
++{
++	if ((hLLDEnet->statusDrainCalls <= 3U) ||
++		((hLLDEnet->statusDrainCalls % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO,
++			   "%s: calls=%u drainedStatus=%u retainedNonStatus=%u\n",
++			   __func__,
++			   hLLDEnet->statusDrainCalls,
++			   hLLDEnet->statusDrainedFrames,
++			   hLLDEnet->statusRetainedNonStatus);
++	}
++}
++
++static int LLDEnetEnsureStatusFrameHdr(LLDEnet_t *hLLDEnet)
++{
++	int status;
++
++	if (hLLDEnet->phyStatusFrameHdrValid) {
++		return LLDENET_E_OK;
++	}
++	if (hLLDEnet->phyStatusFrameHdrUnavailable) {
++		return LLDENET_E_UNSUPPORT;
++	}
++
++	/* Current PHY backend exposes a fixed Layer-2 status frame header. */
++	status = LLDTSyncGetStatusFrameEthHeader(hLLDEnet->hEnet,
++											 (uint8_t)hLLDEnet->coreId,
++											 (uint8_t)ENET_MAC_PORT_1,
++											 hLLDEnet->phyStatusFrameHdr,
++											 sizeof(hLLDEnet->phyStatusFrameHdr));
++	if (status != LLDENET_E_OK) {
++		hLLDEnet->phyStatusFrameHdrUnavailable = true;
++		return status;
++	}
++
++	hLLDEnet->phyStatusFrameHdrValid = true;
++	return LLDENET_E_OK;
++}
++
++static void LLDEnetRecycleRxPkt(EnetDma_Pkt *pktInfo)
++{
++	LLDEnetRxDma_t *hLLDRxDma = (LLDEnetRxDma_t *)pktInfo->appPriv;
++
++	EnetAppUtils_assert(hLLDRxDma != NULL);
++	EnetDma_checkPktState(&pktInfo->pktState, ENET_PKTSTATE_MODULE_APP,
++				ENET_PKTSTATE_APP_WITH_READYQ, ENET_PKTSTATE_APP_WITH_FREEQ);
++	EnetQueue_enq(&hLLDRxDma->rxFreeQ, &pktInfo->node);
++	EnetAppUtils_validatePacketState(&hLLDRxDma->rxFreeQ,
++				ENET_PKTSTATE_APP_WITH_FREEQ, ENET_PKTSTATE_APP_WITH_DRIVER);
++	EnetDma_submitRxPktQ(hLLDRxDma->hRxCh, &hLLDRxDma->rxFreeQ);
++}
++
+ static int LLDEnetRecvSubRxGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 			void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg)
+ {
+@@ -1120,6 +1173,87 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame)
+ 	return LLDEnetRecvGen(hLLDEnet, frame, NULL, NULL);
+ }
+ 
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet)
++{
++	EnetDma_PktQ retainedQ;
++	EnetDma_PktQ drainedQ;
++	EnetDma_Pkt *pktInfo;
++	uint32_t rxReadyCnt;
++	uint32_t pktSize;
++	uint8_t *rxFrame;
++	bool isStatusFrame;
++	int status;
++	int drained = 0;
++	int retained = 0;
++	int firstError = 0;
++
++	if ((hLLDEnet == NULL) || (hLLDEnet->dmaRxOwner == false)) {
++		return 0;
++	}
++
++	rxReadyCnt = EnetQueue_getQCount(&hLLDEnet->rxReadyQ);
++	if (rxReadyCnt == 0U) {
++		return 0;
++	}
++
++	status = LLDEnetEnsureStatusFrameHdr(hLLDEnet);
++	if (status != LLDENET_E_OK) {
++		return 0;
++	}
++
++	EnetQueue_initQ(&retainedQ);
++	EnetQueue_initQ(&drainedQ);
++	hLLDEnet->statusDrainCalls++;
++
++	while (rxReadyCnt-- > 0U) {
++		pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&hLLDEnet->rxReadyQ);
++		if (pktInfo == NULL) {
++			break;
++		}
++
++		EnetAppUtils_assert(pktInfo->sgList.numScatterSegments == 1U);
++		rxFrame = (uint8_t *)EnetUtils_physToVirt((uint64_t)pktInfo->sgList.list[0].bufPtr, NULL);
++		pktSize = pktInfo->sgList.list[0].segmentFilledLen;
++		isStatusFrame = ((pktSize >= sizeof(hLLDEnet->phyStatusFrameHdr)) &&
++						 (memcmp(rxFrame, hLLDEnet->phyStatusFrameHdr,
++								 sizeof(hLLDEnet->phyStatusFrameHdr)) == 0));
++
++		if (!isStatusFrame) {
++			EnetQueue_enq(&retainedQ, &pktInfo->node);
++			retained++;
++			continue;
++		}
++
++		status = LLDTSyncProcPhyStatusFrame(hLLDEnet->hEnet,
++											 (uint8_t)hLLDEnet->coreId,
++											 (uint8_t)pktInfo->rxPortNum,
++											 rxFrame,
++											 pktSize);
++		if ((status != LLDENET_E_OK) && (firstError == 0)) {
++			firstError = status;
++		}
++		EnetQueue_enq(&drainedQ, &pktInfo->node);
++		drained++;
++	}
++
++	EnetQueue_append(&hLLDEnet->rxReadyQ, &retainedQ);
++	hLLDEnet->statusDrainedFrames += (uint32_t)drained;
++	hLLDEnet->statusRetainedNonStatus += (uint32_t)retained;
++	LLDEnetLogStatusDrain(hLLDEnet);
++
++	pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&drainedQ);
++	while (pktInfo != NULL) {
++		LLDEnetRecycleRxPkt(pktInfo);
++		pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&drainedQ);
++	}
++
++	if (firstError != 0) {
++		return firstError;
++	}
++
++	return drained;
++}
++
+ void LLDEnetCfgInit(LLDEnetCfg_t *cfg)
+ {
+ 	uint32_t i;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+index db8fd66..98f8760 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+@@ -158,6 +158,12 @@ struct LLDEnet {
+ 	uint32_t instId;
+ 	/* only dmaRxOwner=true has the permission to call the SDK RX DMA APIs*/
+ 	bool dmaRxOwner;
++	bool phyStatusFrameHdrValid;
++	bool phyStatusFrameHdrUnavailable;
++	uint8_t phyStatusFrameHdr[14U];
++	uint32_t statusDrainCalls;
++	uint32_t statusDrainedFrames;
++	uint32_t statusRetainedNonStatus;
+ 	/* valid only when dmaRxOwner = false, and numRxChannels = 1*/
+ 	int subRxIndex;
+ 	/* true when Rx timestamp is in the dmaPktInfo, should be set as true for ICSSG */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+index b6ea850..22f0b97 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+@@ -51,6 +51,7 @@
+  * lldtsync.c
+ */
+ #include <enet_mcm.h>
++#include <include/core/enet_mod_phy.h>
+ #include "tilld/lldtsync.h"
+ #include "combase_private.h"
+ #include <tsn_gptp/gptpconf/xl4-extmod-xl4gptp.h>
+@@ -173,6 +174,61 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 	return LLDENET_E_OK;
+ }
+ 
++int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
++							   uint8_t *frame, uint32_t size)
++{
++	int32_t status = ENET_SOK;
++	Enet_IoctlPrms prms;
++	EnetPhy_PtpStatusFrameInArgs inArgs;
++
++	if ((hEnet == NULL) || (frame == NULL) || (size == 0U)) {
++		return LLDENET_E_PARAM;
++	}
++
++	inArgs.macPort = (Enet_MacPort)macPort;
++	inArgs.frame = frame;
++	inArgs.frameLen = size;
++	ENET_IOCTL_SET_IN_ARGS(&prms, &inArgs);
++	ENET_IOCTL((Enet_Handle)hEnet, coreId,
++			   ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME, &prms, status);
++	if (status == ENET_ENOTSUPPORTED) {
++		return LLDENET_E_UNSUPPORT;
++	}
++	if (status != ENET_SOK) {
++		return LLDENET_E_IOCTL;
++	}
++
++	return LLDENET_E_OK;
++}
++
++int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
++									uint8_t *ethHdr, uint32_t size)
++{
++	int32_t status = ENET_SOK;
++	Enet_IoctlPrms prms;
++	EnetPhy_GenericInArgs inArgs;
++	EnetPhy_PtpStatusFrameEthHdrOutArgs outArgs;
++
++	if ((hEnet == NULL) || (ethHdr == NULL) || (size < sizeof(outArgs.ethHdr))) {
++		return LLDENET_E_PARAM;
++	}
++
++	memset(&outArgs, 0, sizeof(outArgs));
++	inArgs.macPort = (Enet_MacPort)macPort;
++	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, &outArgs);
++	ENET_IOCTL((Enet_Handle)hEnet, coreId,
++			   ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR, &prms, status);
++	if (status == ENET_ENOTSUPPORTED) {
++		return LLDENET_E_UNSUPPORT;
++	}
++	if (status != ENET_SOK) {
++		return LLDENET_E_IOCTL;
++	}
++
++	memcpy(ethHdr, outArgs.ethHdr, sizeof(outArgs.ethHdr));
++	return LLDENET_E_OK;
++}
++
+ int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
+ {
+ 	int32_t status = ENET_SOK;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+index 63c19e9..e7d4d5b 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+@@ -110,12 +110,19 @@ struct gptpnet_data {
+ 	int64_t event_ts64;
+ 	uint64_t next_tout64;
+ 	CB_SEM_T semaphore;
++	CB_SEM_T statPktSem;
++	CB_THREAD_T statusThread;
+ 	LLDTSync_t *lldtsync;
+ 	txts_queue_t txts_queue;
+ 	int64_t last_ts64;
+ 	ptpkt_t rxbuf;
+ 	CB_SOCKET_T lldsock;
+ 	uint8_t gptpInstanceIndex;
++	bool statusThreadRunning;
++	bool bStopped;
++	uint32_t statusWakeups;
++	uint32_t statusFramesDrained;
++	uint32_t statusWakeupsNoStatus;
+ };
+ 
+ #if LLD_GPTPNET_ENABLE_RX_DEBUG
+@@ -251,12 +258,74 @@ static int pop_txts_info(txts_queue_t *q, txts_info_t *out)
+ }
+ 
+ /* do not call log or any blocking function inside */
+-static void txrx_notify_cb(void *arg)
++static void tx_notify_cb(void *arg)
+ {
+ 	gptpnet_data_t *gpnet = (gptpnet_data_t *)arg;
+ 	CB_SEM_POST(&gpnet->semaphore);
+ }
+ 
++/* do not call log or any blocking function inside */
++static void rx_notify_cb(void *arg)
++{
++	gptpnet_data_t *gpnet = (gptpnet_data_t *)arg;
++
++	if (gpnet->statusThreadRunning) {
++		CB_SEM_POST(&gpnet->statPktSem);
++	} else {
++		CB_SEM_POST(&gpnet->semaphore);
++	}
++}
++
++static void gptpnet_log_status_worker(gptpnet_data_t *gpnet)
++{
++	if ((gpnet->statusWakeups <= 3U) || ((gpnet->statusWakeups % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO,
++			   "%s: wakeups=%u drained=%u empty=%u\n",
++			   __func__,
++			   gpnet->statusWakeups,
++			   gpnet->statusFramesDrained,
++			   gpnet->statusWakeupsNoStatus);
++	}
++}
++
++static void *gptpnet_statusFrameProcTask(void *args)
++{
++	gptpnet_data_t *gpnet = (gptpnet_data_t *)args;
++
++	UB_LOG(UBL_INFO, "%s: status worker started\n", __func__);
++
++	while (1) {
++		CB_SEM_WAIT(&gpnet->statPktSem);
++		if (gpnet->bStopped) {
++			break;
++		}
++
++		gpnet->statusWakeups++;
++		if (gpnet->lldsock != NULL) {
++			int drained = cb_lld_process_status_frames(gpnet->lldsock);
++			if (drained > 0) {
++				gpnet->statusFramesDrained += (uint32_t)drained;
++			} else if (drained == 0) {
++				gpnet->statusWakeupsNoStatus++;
++			} else {
++				UB_LOG(UBL_ERROR, "%s: status drain failed %d\n", __func__, drained);
++			}
++		} else {
++			gpnet->statusWakeupsNoStatus++;
++		}
++
++		gptpnet_log_status_worker(gpnet);
++		CB_SEM_POST(&gpnet->semaphore);
++	}
++
++	UB_LOG(UBL_INFO, "%s: status worker exiting wakeups=%u drained=%u empty=%u\n",
++		   __func__,
++		   gpnet->statusWakeups,
++		   gpnet->statusFramesDrained,
++		   gpnet->statusWakeupsNoStatus);
++	return NULL;
++}
++
+ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 					   netdevice_t *ndev, const char *netdev)
+ {
+@@ -291,8 +360,8 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 		if(cb_rawsock_open(&llrawp, &gpnet->lldsock, NULL, NULL, srcmac) < 0) {
+ 			return -1;
+ 		}
+-		cb_lld_set_txnotify_cb(gpnet->lldsock, txrx_notify_cb, gpnet);
+-		cb_lld_set_rxnotify_cb(gpnet->lldsock, txrx_notify_cb, gpnet);
++		cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet);
++		cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet);
+ 
+ 		if(cb_reg_multicast_address(gpnet->lldsock,
+ 					ndev->nlstatus.devname, destmac, 0)) {
+@@ -370,6 +439,15 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+ 	}
+ 	(void)memset(gpnet->netdevices, 0, num_ports * sizeof(netdevice_t));
+ 
++	if (CB_SEM_INIT(&gpnet->semaphore, 0, 0) < 0) {
++		UB_LOG(UBL_ERROR,"%s:failed to init sem!\n", __func__);
++		goto error;
++	}
++	if (CB_SEM_INIT(&gpnet->statPktSem, 0, 0) < 0) {
++		UB_LOG(UBL_ERROR,"%s:failed to init status sem!\n", __func__);
++		goto error;
++	}
++
+ 	for (i = 0; i < gpnet->num_netdevs; i++) {
+ 		res = onenet_init(gptpInstanceIndex, gpnet, &gpnet->netdevices[i], netdev[i]);
+ 		if (res < 0) {
+@@ -391,11 +469,6 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+ 		goto error;
+ 	}
+ 
+-	if (CB_SEM_INIT(&gpnet->semaphore, 0, 0) < 0) {
+-		UB_LOG(UBL_ERROR,"%s:failed to init sem!\n", __func__);
+-		goto error;
+-	}
+-
+ 	LLDTSyncCfgInit(&tsyncfg);
+ 	cb_lld_get_type_instance(&tsyncfg.enetType, &tsyncfg.instId);
+ 	gpnet->lldtsync = LLDTSyncOpen(&tsyncfg);
+@@ -412,6 +485,18 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+ 
+ 	UB_LOG(UBL_INFO,"%s:Open lldtsync OK!\n", __func__);
+ 
++	{
++		cb_tsn_thread_attr_t attr;
++
++		cb_tsn_thread_attr_init(&attr, 3, (16 * 1024), "gptp_status");
++		if (CB_THREAD_CREATE(&gpnet->statusThread, &attr,
++							 gptpnet_statusFrameProcTask, gpnet) != 0) {
++			UB_LOG(UBL_ERROR, "%s:failed to create status worker\n", __func__);
++			goto error;
++		}
++		gpnet->statusThreadRunning = true;
++	}
++
+ 	return gpnet;
+ 
+ error:
+@@ -424,6 +509,12 @@ int gptpnet_close(gptpnet_data_t *gpnet)
+ 	UB_LOG(UBL_DEBUGV, "%s:\n",__func__);
+ 	if (!gpnet) {return -1;}
+ 	gptpgcfg_remove_netdevs(gpnet->gptpInstanceIndex);
++	if (gpnet->statusThreadRunning) {
++		gpnet->bStopped = true;
++		CB_SEM_POST(&gpnet->statPktSem);
++		CB_THREAD_JOIN(gpnet->statusThread, NULL);
++		gpnet->statusThreadRunning = false;
++	}
+ 	if (gpnet->lldsock) {
+ 		cb_rawsock_close(gpnet->lldsock);
+ 		gpnet->lldsock = NULL;
+@@ -436,6 +527,10 @@ int gptpnet_close(gptpnet_data_t *gpnet)
+ 		CB_SEM_DESTROY(&gpnet->semaphore);
+ 		gpnet->semaphore = NULL;
+ 	}
++	if (gpnet->statPktSem) {
++		CB_SEM_DESTROY(&gpnet->statPktSem);
++		gpnet->statPktSem = NULL;
++	}
+ 	UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet->netdevices);
+ 	UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet);
+ 	return 0;
