@@ -1,0 +1,141 @@
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index ca241b2..7938e9d 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -812,6 +812,7 @@ static void EnetApp_rxTask(void *args)
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+             static uint32_t dbgTotal = 0U;
+             static uint32_t dbgPhyStatus = 0U;
++            static uint32_t dbgPsfSeenButNotForwarded = 0U;
+             static uint32_t dbgPtpNonPsf = 0U;
+             static uint32_t dbgOther = 0U;
+             static uint32_t dbgPtpEchoed = 0U;
+@@ -849,31 +850,13 @@ static void EnetApp_rxTask(void *args)
+                     (memcmp(psfFrame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
+                 {
+                     isPhyStatus = 1U;
+-                    EnetPhy_PtpStatusFrameInArgs inArgs;
+-                    Enet_IoctlPrms psfPrms;
+-                    Enet_MacPort psfMacPort = ENET_MAC_PORT_1;
+-                    int32_t psfStatus = ENET_SOK;
+-
+-                    if (gEnetAppCfg.numMacPorts > 0U)
+-                    {
+-                        psfMacPort = gEnetAppCfg.macPorts[0U];
+-                    }
+-
+-                    inArgs.macPort = psfMacPort;
+-                    inArgs.frame = psfFrame;
+-                    inArgs.frameLen = psfFrameLen;
+-                    ENET_IOCTL_SET_IN_ARGS(&psfPrms, &inArgs);
+-                    ENET_IOCTL(gEnetAppCfg.hEnet,
+-                               gEnetAppCfg.coreId,
+-                               ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
+-                               &psfPrms,
+-                               psfStatus);
+-
+-                    if (psfStatus != ENET_SOK)
++                    dbgPsfSeenButNotForwarded++;
++                    if ((dbgPsfSeenButNotForwarded <= 3U) ||
++                        ((dbgPsfSeenButNotForwarded % 1000U) == 0U))
+                     {
+-                        EnetAppUtils_print("%s: PHY PSF ingest ioctl failed: %d\r\n",
++                        EnetAppUtils_print("%s: default-flow PSF seen but not forwarded count=%u\r\n",
+                                            gEnetAppCfg.name,
+-                                           psfStatus);
++                                           dbgPsfSeenButNotForwarded);
+                     }
+                 }
+             }
+@@ -1206,10 +1189,11 @@ static void EnetApp_rxTask(void *args)
+             else if ((nowMs - dbgLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
+             {
+                 EnetAppUtils_print(
+-                    "%s: default-flow summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpBypassed=%u ptpNoTx=%u echoEnabled=%u\r\n",
++                    "%s: default-flow summary: total=%u phyStatus=%u psfSeenButNotForwarded=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpBypassed=%u ptpNoTx=%u echoEnabled=%u\r\n",
+                     gEnetAppCfg.name,
+                     dbgTotal,
+                     dbgPhyStatus,
++                    dbgPsfSeenButNotForwarded,
+                     dbgPtpNonPsf,
+                     dbgOther,
+                     dbgPtpEchoed,
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+index e53d809..545a3c1 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+@@ -985,6 +985,15 @@ static void LLDEnetLogStatusDrain(LLDEnet_t *hLLDEnet)
+ 	}
+ }
+ 
++static void LLDEnetLogOwnerVisiblePsf(LLDEnet_t *hLLDEnet)
++{
++	if ((hLLDEnet->ownerVisiblePsfCount <= 3U) ||
++		((hLLDEnet->ownerVisiblePsfCount % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO, "%s: owner-psf-visible count=%u\n",
++			   __func__, hLLDEnet->ownerVisiblePsfCount);
++	}
++}
++
+ static int LLDEnetEnsureStatusFrameHdr(LLDEnet_t *hLLDEnet)
+ {
+ 	int status;
+@@ -1104,18 +1113,19 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 	pktSize = pktInfo->sgList.list[0].segmentFilledLen;
+ 	{
+ 		bool isKnownPsf = IsKnownPsfFrame((const uint8_t *)rxFrame, pktSize);
+-		bool dropMissteeredPsf = (hLLDRxDma->dmaRxShared == false) &&
+-					 (hLLDRxDma->ownerFilter.ethType == ETH_P_1588) &&
+-					 isKnownPsf;
+ 		bool ownerAccept = false;
+ 
+ 		if (hLLDRxDma->dmaRxShared == false) {
+-			ownerAccept = !dropMissteeredPsf;
++			ownerAccept = true;
+ 		} else {
+ 			ownerAccept = IsRxFrameForDmaOwner(hLLDRxDma, rxFrame, pktSize);
+ 		}
+ 
+ 		if (ownerAccept) {
++			if (isKnownPsf) {
++				hLLDEnet->ownerVisiblePsfCount++;
++				LLDEnetLogOwnerVisiblePsf(hLLDEnet);
++			}
+ 			LLDEnetDbgTracePtpRoute("owner-accept", hLLDRxDma, rxFrame, pktSize,
+ 								   (uint8_t)pktInfo->rxPortNum, -1);
+ 			if (LLDEnetRecvCb != NULL) { /* zero-copy */
+@@ -1136,10 +1146,6 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 					res = LLDENET_E_BUFSIZE;
+ 				}
+ 			}
+-		} else if (dropMissteeredPsf) {
+-			LLDEnetDbgTracePtpRoute("owner-drop-psf", hLLDRxDma, rxFrame, pktSize,
+-								   (uint8_t)pktInfo->rxPortNum, -1);
+-			res = LLDENET_E_NOMATCH;
+ 		} else {
+ 			/* only happens when the dmaRxShared = true and this function
+ 			 * is called by owner */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+index 98f8760..0443126 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+@@ -164,6 +164,7 @@ struct LLDEnet {
+ 	uint32_t statusDrainCalls;
+ 	uint32_t statusDrainedFrames;
+ 	uint32_t statusRetainedNonStatus;
++	uint32_t ownerVisiblePsfCount;
+ 	/* valid only when dmaRxOwner = false, and numRxChannels = 1*/
+ 	int subRxIndex;
+ 	/* true when Rx timestamp is in the dmaPktInfo, should be set as true for ICSSG */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+index e7d4d5b..e1cc98a 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
+@@ -354,7 +354,6 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 			gptpInstanceIndex, XL4_EXTMOD_XL4GPTP_SOCKET_TXPRIORITY,
+ 			YDBI_CONFIG);
+ 		llrawp.rw_type=CB_RAWSOCK_RDWR;
+-		memcpy(llrawp.rxFilterDstMac, destmac, sizeof(llrawp.rxFilterDstMac));
+ 
+ 		gptpgcfg_releasedb(gptpInstanceIndex);
+ 		if(cb_rawsock_open(&llrawp, &gpnet->lldsock, NULL, NULL, srcmac) < 0) {
