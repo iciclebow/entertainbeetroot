@@ -951,10 +951,23 @@ index 13a54e23fe4e03f54e5c2b2a6eb5f053258b0d29..8ce569bd56e3f4ea1e45ef2fdc099215
      void (*printRegs)(EnetPhy_Handle hPhy);
  } EnetPhy_Drv;
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
-index 5ff3ffd45088674bfe5c09282ce6434de573fdad..70d2ce9e485a098d7243c919f170dfe9dc73c6ff 100644
+index 5ff3ffd45088674bfe5c09282ce6434de573fdad..18f15308140792cda73f6ac836b6f976ab3071ad 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
-@@ -63,6 +63,7 @@ static netdev_map_t s_ndevmap_table[MAX_NUMBER_ENET_DEVS];
+@@ -58,11 +58,20 @@
+ 
+ #define MAC_VALID(mac) (((mac)[0]|(mac)[1]|(mac)[2]|(mac)[3]|(mac)[4]|(mac)[5]) != 0)
+ #define CB_LLD_PRIORITY_MAX (7U)
++#define CB_BRINGUP_PROBE_ENTER() \
++	do { \
++		static bool printed = false; \
++		if (!printed) { \
++			printed = true; \
++			UB_LOG(UBL_INFO, "%s: enter\n", __func__); \
++		} \
++	} while (0)
+ 
+ static netdev_map_t s_ndevmap_table[MAX_NUMBER_ENET_DEVS];
  static int s_num_devs;
  static uint32_t s_enet_type;
  static uint32_t s_instance_id;
@@ -962,7 +975,65 @@ index 5ff3ffd45088674bfe5c09282ce6434de573fdad..70d2ce9e485a098d7243c919f170dfe9
  static cb_socket_lldcfg_update_cb_t s_socket_lldcfg_update_cb;
  
  /*
-@@ -488,7 +489,8 @@ int cb_get_ptpdev_from_netdev(char *netdev, char *ptpdev)
+@@ -99,6 +108,7 @@ static int update_enet_cfg(cb_rawsock_paras_t *llrawp, LLDEnetCfg_t *ecfg,
+ 	uint32_t i;
+ 	int res;
+ 
++	CB_BRINGUP_PROBE_ENTER();
+ 	update_cfg->dev = llrawp->dev;
+ 	update_cfg->proto = llrawp->proto;
+ 	update_cfg->vlanid = llrawp->vlanid;
+@@ -213,6 +223,7 @@ static int alloc_mac_addr(const char *ifname,
+ {
+ 	int res = -1;
+ 
++	CB_BRINGUP_PROBE_ENTER();
+ 	if ((res = find_mac_addr_bydev(sock, ifname, bmac)) != LLDENET_E_NOAVAIL) {
+ 		return (res == LLDENET_E_OK? 0: -1);
+ 	}
+@@ -248,6 +259,7 @@ int cb_rawsock_open(cb_rawsock_paras_t *llrawp, CB_SOCKET_T *fd, CB_SOCKADDR_LL_
+ 	cb_socket_lldcfg_update_t update_cfg;
+ 	uint32_t i;
+ 
++	CB_BRINGUP_PROBE_ENTER();
+ 	memset(&update_cfg, 0, sizeof(cb_socket_lldcfg_update_t));
+ 
+ 	UB_LOG(UBL_INFO, "%s:combase-"TSNPKGVERSION"\n", __func__);
+@@ -287,19 +299,25 @@ int cb_rawsock_open(cb_rawsock_paras_t *llrawp, CB_SOCKET_T *fd, CB_SOCKADDR_LL_
+ 		   __func__, ecfg.dmaTxChId, ecfg.numRxChannels, ecfg.dmaRxChId[0],
+ 		   ecfg.nTxPkts, ecfg.nRxPkts[0], ecfg.pktSize);
+ 
++	UB_LOG(UBL_INFO, "%s: before LLDEnetOpen ethType=0x%x dmaTxChId=%d numRxChannels=%d dmaRxOwner=%d dmaRxShared=%d\n",
++		   __func__, ecfg.ethType, ecfg.dmaTxChId, ecfg.numRxChannels,
++		   ecfg.dmaRxOwner, ecfg.dmaRxShared);
+ 	sock->lldenet = LLDEnetOpen(&ecfg);
+ 	if (sock->lldenet == NULL) {
+ 		UB_LOG(UBL_ERROR,"%s:sock->lldenet() failure.\n",
+ 			   __func__);
+ 		goto error;
+ 	}
++	UB_LOG(UBL_INFO, "%s: after LLDEnetOpen\n", __func__);
+ 	sock->vlanid = llrawp->vlanid;
+ 	sock->eth_type = llrawp->proto;
++	UB_LOG(UBL_INFO, "%s: before cb_get_mac_bydev dev=%s\n", __func__, llrawp->dev);
+ 	if (cb_get_mac_bydev(sock, llrawp->dev, bmac)) {
+ 		UB_LOG(UBL_ERROR,"%s:alloc_mac_addr() failure.\n",
+ 			   __func__);
+ 		goto error;
+ 	}
++	UB_LOG(UBL_INFO, "%s: after cb_get_mac_bydev dev=%s\n", __func__, llrawp->dev);
+ 	strncpy(sock->devname, llrawp->dev, CB_MAX_NETDEVNAME-1);
+ 	if (addr != NULL) {
+ 		memcpy(addr->sll_addr, bmac, ETH_ALEN);
+@@ -365,6 +383,7 @@ int cb_set_promiscuous_mode(CB_SOCKET_T sfd, const char *dev, bool enable)
+ int cb_get_mac_bydev(CB_SOCKET_T sfd, const char *dev, ub_macaddr_t bmac)
+ {
+ 	int res;
++	CB_BRINGUP_PROBE_ENTER();
+ 	UB_PROTECTED_FUNC(alloc_mac_addr, res, dev, sfd, bmac);
+ 	return res;
+ }
+@@ -488,7 +507,8 @@ int cb_get_ptpdev_from_netdev(char *netdev, char *ptpdev)
  
  /* TI lld specific combase APIs */
  static int lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
@@ -972,7 +1043,7 @@ index 5ff3ffd45088674bfe5c09282ce6434de573fdad..70d2ce9e485a098d7243c919f170dfe9
  {
  	int i;
  
-@@ -521,16 +523,18 @@ static int lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
+@@ -521,16 +541,18 @@ static int lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
  	}
  	s_enet_type = enet_type;
  	s_instance_id = instance_id;
@@ -993,7 +1064,7 @@ index 5ff3ffd45088674bfe5c09282ce6434de573fdad..70d2ce9e485a098d7243c919f170dfe9
  	return res;
  }
  
-@@ -711,7 +715,7 @@ int cb_lld_recv_zerocopy(CB_SOCKET_T sfd, cb_lld_zerocopy_recv_cb_t cblld_recv_c
+@@ -711,7 +733,7 @@ int cb_lld_recv_zerocopy(CB_SOCKET_T sfd, cb_lld_zerocopy_recv_cb_t cblld_recv_c
   */
  int cb_lld_set_txnotify_cb(CB_SOCKET_T sfd, void (*txnotify_cb)(void *arg), void *arg)
  {
@@ -1002,7 +1073,7 @@ index 5ff3ffd45088674bfe5c09282ce6434de573fdad..70d2ce9e485a098d7243c919f170dfe9
  		UB_LOG(UBL_ERROR,"%s:invalid param\n", __func__);
  		return -1;
  	}
-@@ -759,6 +763,20 @@ int cb_lld_get_type_instance(uint32_t *enet_type, uint32_t *instance_id)
+@@ -759,6 +781,20 @@ int cb_lld_get_type_instance(uint32_t *enet_type, uint32_t *instance_id)
  	return 0;
  }
  
@@ -1151,6 +1222,217 @@ index 909cda71b38bf8b365dad69e5a75a187ff804e49..31ba42dd046bf0070769d01813c40350
  /**
   * @brief Forward a PHY status frame into the active PHY backend.
   * @param hEnet Pointer to Enet handle.
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+index 30c1e647a1cdcf96fd1c41aa18946335f632d9d6..23636cc4bb8c7521fe36ab9833276fd8afb664de 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
+@@ -64,6 +64,15 @@
+ #define LLDENET_PTP_RX_OWNER_DEBUG_FIRST_N        (10U)
+ #endif
+ 
++#define LLDENET_BRINGUP_PROBE_ENTER() \
++	do { \
++		static bool printed = false; \
++		if (!printed) { \
++			printed = true; \
++			UB_LOG(UBL_INFO, "%s: enter\n", __func__); \
++		} \
++	} while (0)
++
+ extern int32_t EnetApp_filterPriorityPacketsCfg(Enet_Handle hEnet, uint32_t coreId);
+ extern int32_t EnetApp_applyClassifier(Enet_Handle hEnet, uint32_t coreId, uint8_t *dstMacAddr, uint32_t vlanId,
+ 										uint32_t ethType, uint32_t rxFlowIdx);
+@@ -200,6 +209,8 @@ static void LLDEnetDbgTracePtpRoute(const char *stage,
+ static int LLDEnetSetRxDmaCfg(LLDEnet_t *hLLDEnet, LLDEnetCfg_t *cfg)
+ {
+ 	uint32_t i = 0U;
++
++	LLDENET_BRINGUP_PROBE_ENTER();
+ 	for(i = 0U; i < cfg->numRxChannels; i++) {
+ 		LLDEnetRxDma_t *hLLDRxDma = hLLDEnet->hLLDRxDma[i];
+ 		if (hLLDRxDma->nSubRx == LLDENET_SUB_RX_NUM) {
+@@ -324,13 +335,18 @@ static int DmaRxOpen(LLDEnet_t *hLLDEnet)
+ 	EnetApp_GetRxDmaHandleOutArgs rxChInfo;
+ 	uint32_t i = 0U;
+ 
++	LLDENET_BRINGUP_PROBE_ENTER();
+ 	for (i = 0U; i < hLLDEnet->numRxChannels; i++) {
+ 		LLDEnetRxDma_t *hLLDRxDma = hLLDEnet->hLLDRxDma[i];
++		UB_LOG(UBL_INFO, "%s: before getRxDmaHandle rxChId=%d\n",
++			   __func__, hLLDRxDma->rxChId);
+ 		hLLDRxDma->pRxReadyQ = &hLLDEnet->rxReadyQ;
+ 		/* Open the RX channel */
+ 		rxInArgs.notifyCb = LLDEnetRxNotifyCb;
+ 		rxInArgs.cbArg = hLLDRxDma;
+ 		EnetApp_getRxDmaHandle(hLLDRxDma->rxChId, &rxInArgs, &rxChInfo);
++		UB_LOG(UBL_INFO, "%s: after getRxDmaHandle rxChId=%d hRxCh=%p\n",
++			   __func__, hLLDRxDma->rxChId, rxChInfo.hRxCh);
+ 
+ #ifdef ENET_SOC_HOSTPORT_DMA_TYPE_UDMA
+ 		hLLDRxDma->rxFlowStartIdx = rxChInfo.rxFlowStartIdx;
+@@ -342,7 +358,11 @@ static int DmaRxOpen(LLDEnet_t *hLLDEnet)
+ 		EnetAppUtils_assert(hLLDRxDma->hRxCh != NULL);
+ 
+ 		/* Submit all ready RX buffers to DMA.*/
++		UB_LOG(UBL_INFO, "%s: before DmaRxQInit rxChId=%d\n",
++			   __func__, hLLDRxDma->rxChId);
+ 		DmaRxQInit(hLLDRxDma);
++		UB_LOG(UBL_INFO, "%s: after DmaRxQInit rxChId=%d\n",
++			   __func__, hLLDRxDma->rxChId);
+ 	}
+ 	/* init the rxReadyQ */
+ 	EnetQueue_initQ(&hLLDEnet->rxReadyQ);
+@@ -356,19 +376,32 @@ static int DmaTxOpen(LLDEnet_t *hLLDEnet)
+ 	EnetApp_GetTxDmaHandleOutArgs txChInfo;
+ 	LLDEnetTxDma_t *hLLDTxDma = hLLDEnet->hLLDTxDma;
+ 
++	LLDENET_BRINGUP_PROBE_ENTER();
+ 	/* Open the TX channel */
+ 	txInArgs.cbArg = hLLDTxDma;
+ 	txInArgs.notifyCb = LLDEnetTxNotifyCb;
++	UB_LOG(UBL_INFO, "%s: before getTxDmaHandle txChId=%d\n",
++		   __func__, hLLDTxDma->txChId);
+ 	EnetApp_getTxDmaHandle(hLLDTxDma->txChId, &txInArgs, &txChInfo);
++	UB_LOG(UBL_INFO, "%s: after getTxDmaHandle txChId=%d hTxCh=%p\n",
++		   __func__, hLLDTxDma->txChId, txChInfo.hTxCh);
+ 
+ 	hLLDTxDma->txChNum = txChInfo.txChNum;
+ 	hLLDTxDma->hTxCh = txChInfo.hTxCh;
+ 	EnetAppUtils_assert(hLLDTxDma->hTxCh != NULL);
+ 
++	UB_LOG(UBL_INFO, "%s: before DmaTxQInit txChId=%d\n",
++		   __func__, hLLDTxDma->txChId);
+ 	DmaTxQInit(hLLDTxDma);
++	UB_LOG(UBL_INFO, "%s: after DmaTxQInit txChId=%d\n",
++		   __func__, hLLDTxDma->txChId);
+ 
++	UB_LOG(UBL_INFO, "%s: before enableTxEvent txChId=%d\n",
++		   __func__, hLLDTxDma->txChId);
+ 	status = EnetDma_enableTxEvent(hLLDTxDma->hTxCh);
+ 	EnetAppUtils_assert(status == ENET_SOK);
++	UB_LOG(UBL_INFO, "%s: after enableTxEvent txChId=%d\n",
++		   __func__, hLLDTxDma->txChId);
+ 
+ 	return 0;
+ }
+@@ -458,6 +491,7 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 	int32_t status = ENET_SOK;
+ 	uint32_t i;
+ 
++	LLDENET_BRINGUP_PROBE_ENTER();
+ 	if ((hLLDEnet == NULL) || (dstMacAddr == NULL)) {
+ 		return LLDENET_E_PARAM;
+ 	}
+@@ -505,13 +539,18 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 	 * Policers/classifiers aren't effective on this SoC, and configuring them could
+ 	 * lead to a shortage when enabling multiple TSN modules as it supports only 4.*/
+ 	if(hLLDRxDma->dmaRxShared == false) {
++		UB_LOG(UBL_INFO, "%s: before applyClassifier flowIdx=%u vlan=%u ethType=0x%x\n",
++			   __func__, hLLDRxDma->rxFlowIdx, vlanId, ethType);
+ 		status = EnetApp_applyClassifier(hLLDEnet->hEnet, hLLDEnet->coreId, dstMacAddr,
+ 											 vlanId, ethType, hLLDRxDma->rxFlowIdx);
+ 	}
+ 	else
+ 	{
++		UB_LOG(UBL_INFO, "%s: before filterPriorityPacketsCfg vlan=%u ethType=0x%x\n",
++			   __func__, vlanId, ethType);
+ 		status = EnetApp_filterPriorityPacketsCfg(hLLDEnet->hEnet, hLLDEnet->coreId);
+ 	}
++	UB_LOG(UBL_INFO, "%s: after classifier/filter status=%d\n", __func__, status);
+ 
+ 	if (status != ENET_SOK) {
+ 		UB_LOG(UBL_ERROR,"Enet_ioctl failed %d\n", status);
+@@ -613,6 +652,7 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 	LLDEnet_t *hLLDEnet;
+ 	int res;
+ 
++	LLDENET_BRINGUP_PROBE_ENTER();
+ 	if (cfg == NULL) {
+ 		UB_LOG(UBL_ERROR,"%s:invalid param\n", __func__);
+ 		return NULL;
+@@ -623,9 +663,17 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 	memset(hLLDEnet, 0, sizeof(LLDEnet_t));
+ 
+ 	hLLDEnet->coreId = EnetSoc_getCoreId();
++	UB_LOG(UBL_INFO, "%s: before acquireHandleInfo enetType=%u instId=%u coreId=%u\n",
++		   __func__, cfg->enetType, cfg->instId, hLLDEnet->coreId);
+ 	EnetApp_acquireHandleInfo((Enet_Type)cfg->enetType, cfg->instId, &handleInfo);
++	UB_LOG(UBL_INFO, "%s: after acquireHandleInfo hEnet=%p\n",
++		   __func__, handleInfo.hEnet);
++	UB_LOG(UBL_INFO, "%s: before coreAttach enetType=%u instId=%u coreId=%u\n",
++		   __func__, cfg->enetType, cfg->instId, hLLDEnet->coreId);
+ 	EnetApp_coreAttach((Enet_Type)cfg->enetType, cfg->instId,
+ 			   hLLDEnet->coreId, &attachInfo);
++	UB_LOG(UBL_INFO, "%s: after coreAttach coreKey=%u\n",
++		   __func__, attachInfo.coreKey);
+ 	EnetAppUtils_assert(handleInfo.hEnet != NULL);
+ 
+ 	hLLDEnet->hEnet = handleInfo.hEnet;
+@@ -635,8 +683,12 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 	hLLDEnet->numRxChannels = cfg->numRxChannels;
+ 	if (cfg->unusedDmaRx == false) {
+ 		uint32_t i = 0U;
++		UB_LOG(UBL_INFO, "%s: RX bringup start numRxChannels=%u dmaRxOwner=%d\n",
++			   __func__, cfg->numRxChannels, cfg->dmaRxOwner);
+ 		for (i = 0U; i < cfg->numRxChannels; i++) {
+ 			/* get RX dma handle */
++			UB_LOG(UBL_INFO, "%s: before getRxDmaTable idx=%u rxChId=%d\n",
++				   __func__, i, cfg->dmaRxChId[i]);
+ 			hLLDEnet->hLLDRxDma[i] = LLDEnetGetRxDma(cfg->dmaRxChId[i]);
+ 			EnetAppUtils_assert(hLLDEnet->hLLDRxDma[i] != NULL);
+ 			hLLDEnet->hLLDRxDma[i]->rxChId = cfg->dmaRxChId[i];
+@@ -645,11 +697,17 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 			 * When the hLLDRxDma->hasOwner is true, user can not set cfg->dmaRxOwner
+ 			 * to true because only one can own the RX DMA channel */
+ 			EnetAppUtils_assert(cfg->dmaRxOwner != hLLDEnet->hLLDRxDma[i]->hasOwner);
++			UB_LOG(UBL_INFO, "%s: after getRxDmaTable idx=%u rxChId=%d hasOwner=%d\n",
++				   __func__, i, cfg->dmaRxChId[i], hLLDEnet->hLLDRxDma[i]->hasOwner);
+ 		}
++		UB_LOG(UBL_INFO, "%s: before LLDEnetSetRxDmaCfg\n", __func__);
+ 		UB_PROTECTED_FUNC(LLDEnetSetRxDmaCfg, res, hLLDEnet, cfg);
+ 		EnetAppUtils_assert(res == 0);
++		UB_LOG(UBL_INFO, "%s: after LLDEnetSetRxDmaCfg res=%d\n", __func__, res);
+ 		if (cfg->dmaRxOwner) {
++			UB_LOG(UBL_INFO, "%s: before DmaRxOpen\n", __func__);
+ 			DmaRxOpen(hLLDEnet);
++			UB_LOG(UBL_INFO, "%s: after DmaRxOpen\n", __func__);
+ 		}
+ 		hLLDEnet->dmaRxOwner = cfg->dmaRxOwner;
+ 		if (hLLDEnet->dmaRxOwner) {
+@@ -658,13 +716,18 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 			}
+ 		}
+ 		if (IsMacAddrSet(cfg->dstMacAddr) || (cfg->ethType > 0)) {
++			UB_LOG(UBL_INFO, "%s: before LLDEnetFilter vlan=%u ethType=0x%x\n",
++				   __func__, cfg->vlanId, cfg->ethType);
+ 			res = LLDEnetFilter(hLLDEnet, cfg->dstMacAddr, cfg->vlanId,
+ 					cfg->ethType);
+ 			EnetAppUtils_assert(res == 0);
++			UB_LOG(UBL_INFO, "%s: after LLDEnetFilter res=%d\n", __func__, res);
+ 		}
+ 	}
+ 	if (cfg->unusedDmaTx == false) {
+ 		/* get TX dma handle */
++		UB_LOG(UBL_INFO, "%s: TX bringup start txChId=%d\n",
++			   __func__, cfg->dmaTxChId);
+ 		hLLDEnet->hLLDTxDma = LLDEnetGetTxDma(cfg->dmaTxChId);
+ 		EnetAppUtils_assert(hLLDEnet->hLLDTxDma != NULL);
+ 		if (hLLDEnet->hLLDTxDma->hasOwner) {
+@@ -686,9 +749,14 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
+ 		hLLDEnet->hLLDTxDma->txNotifyCb = cfg->txNotifyCb;
+ 		hLLDEnet->hLLDTxDma->txCbArg = cfg->txCbArg;
+ 		hLLDEnet->hLLDTxDma->txChId = cfg->dmaTxChId;
++		UB_LOG(UBL_INFO, "%s: before DmaTxOpen txChId=%d\n",
++			   __func__, hLLDEnet->hLLDTxDma->txChId);
+ 		DmaTxOpen(hLLDEnet);
++		UB_LOG(UBL_INFO, "%s: after DmaTxOpen txChId=%d\n",
++			   __func__, hLLDEnet->hLLDTxDma->txChId);
+ 	}
+ 
++	UB_LOG(UBL_INFO, "%s: return success hLLDEnet=%p\n", __func__, hLLDEnet);
+ 	return hLLDEnet;
+ }
+ 
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
 index 22f0b97f3fba951467dabcc6f2a3321ef2db0663..90b99a428e5b46340bfd0b56f7889c5afaab5be4 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
@@ -1879,7 +2161,7 @@ index 22f0b97f3fba951467dabcc6f2a3321ef2db0663..90b99a428e5b46340bfd0b56f7889c5a
 +	return hTSync->tsyncDrv->enableTsEvent(hTSync, ports, numPorts);
 +}
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4b86c4ffa 100644
+index e1cc98a6d6087244c0951c78526b8d99df242af9..5ad35b88b527aee8dbd1def3f8e10a582494604a 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
 @@ -118,13 +118,62 @@ struct gptpnet_data {
@@ -2013,29 +2295,32 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  	return NULL;
  }
  
-@@ -359,8 +416,30 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+@@ -359,8 +416,44 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
  		if(cb_rawsock_open(&llrawp, &gpnet->lldsock, NULL, NULL, srcmac) < 0) {
  			return -1;
  		}
 -		cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet);
 -		cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet);
-+		if (cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet) < 0) {
-+			cb_rawsock_close(gpnet->lldsock);
-+			gpnet->lldsock = NULL;
-+			return -1;
-+		}
 +		if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) {
 +			if (cb_lld_set_txnotify_cb(gpnet->lldsock, NULL, gpnet) < 0) {
++				UB_LOG(UBL_ERROR, "%s: failed to set TX notify policy=off tsSource=%s\n",
++					   __func__, gptpnet_ts_source_name(gpnet->tsSource));
 +				cb_rawsock_close(gpnet->lldsock);
 +				gpnet->lldsock = NULL;
 +				return -1;
 +			}
++			UB_LOG(UBL_INFO, "%s: TX notify configured policy=off tsSource=%s\n",
++				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
 +		} else if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_CPTS) {
 +			if (cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet) < 0) {
++				UB_LOG(UBL_ERROR, "%s: failed to set TX notify policy=main tsSource=%s\n",
++					   __func__, gptpnet_ts_source_name(gpnet->tsSource));
 +				cb_rawsock_close(gpnet->lldsock);
 +				gpnet->lldsock = NULL;
 +				return -1;
 +			}
++			UB_LOG(UBL_INFO, "%s: TX notify configured policy=main tsSource=%s\n",
++				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
 +		} else {
 +			UB_LOG(UBL_ERROR, "%s: invalid timestamp source %d\n",
 +				   __func__, (int)gpnet->tsSource);
@@ -2043,10 +2328,31 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
 +			gpnet->lldsock = NULL;
 +			return -1;
 +		}
++		if (cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet) < 0) {
++			UB_LOG(UBL_ERROR, "%s: failed to set RX notify tsSource=%s\n",
++				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
++			cb_rawsock_close(gpnet->lldsock);
++			gpnet->lldsock = NULL;
++			return -1;
++		}
++		UB_LOG(UBL_INFO, "%s: RX notify configured policy=%s tsSource=%s\n",
++			   __func__,
++			   (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) ? "status" : "main",
++			   gptpnet_ts_source_name(gpnet->tsSource));
  
  		if(cb_reg_multicast_address(gpnet->lldsock,
  					ndev->nlstatus.devname, destmac, 0)) {
-@@ -430,6 +509,24 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+@@ -369,6 +462,9 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 			gpnet->lldsock = NULL;
+ 			return -1;
+ 		}
++		UB_LOG(UBL_INFO, "%s: multicast registration complete tsSource=%s dev=%s\n",
++			   __func__, gptpnet_ts_source_name(gpnet->tsSource),
++			   ndev->nlstatus.devname);
+ 	} else {
+ 		if (cb_get_mac_bydev(gpnet->lldsock, ndev->nlstatus.devname, srcmac)) {
+ 			return -1;
+@@ -430,6 +526,24 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
  	(void)memset(gpnet, 0, sizeof(gptpnet_data_t));
  	gpnet->gptpInstanceIndex=gptpInstanceIndex;
  	gpnet->num_netdevs = num_ports;
@@ -2071,7 +2377,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  	gpnet->netdevices =
  		(netdevice_t *)UB_SD_GETMEM(GPTP_MEDIUM_ALLOC, num_ports * sizeof(netdevice_t));
  	if(ub_assert_fatal(gpnet->netdevices, __func__, "malloc")){
-@@ -470,11 +567,13 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+@@ -470,11 +584,13 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
  
  	LLDTSyncCfgInit(&tsyncfg);
  	cb_lld_get_type_instance(&tsyncfg.enetType, &tsyncfg.instId);
@@ -2086,7 +2392,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  
  	res = LLDTSyncEnableTsEvent(gpnet->lldtsync, ports, nports);
  	if (res != LLDENET_E_OK) {
-@@ -484,7 +583,7 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+@@ -484,7 +600,7 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
  
  	UB_LOG(UBL_INFO,"%s:Open lldtsync OK!\n", __func__);
  
@@ -2095,7 +2401,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  		cb_tsn_thread_attr_t attr;
  
  		cb_tsn_thread_attr_init(&attr, 3, (16 * 1024), "gptp_status");
-@@ -557,6 +656,8 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
+@@ -557,6 +673,8 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
  	uint16_t seqid;
  	uint8_t domain;
  	int res;
@@ -2104,7 +2410,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  
  	if (length > GPTP_MAX_PACKET_SIZE) {
  		UB_LOG(UBL_ERROR, "%s:deviceIndex = %d, length = %d is too big\n",
-@@ -573,19 +674,48 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
+@@ -573,19 +691,48 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
  	seqid = PTP_HEAD_SEQID(ndev->txbuf.pdata);
  	domain = PTP_HEAD_DOMAIN_NUMBER(ndev->txbuf.pdata);
  
@@ -2161,7 +2467,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  	}
  	return res;
  }
-@@ -600,6 +730,8 @@ static int provide_txts(gptpnet_data_t *gpnet, txts_info_t *txts_info, uint64_t
+@@ -600,6 +747,8 @@ static int provide_txts(gptpnet_data_t *gpnet, txts_info_t *txts_info, uint64_t
  	edtxts.domain = txts_info->domain;
  	edtxts.ts64 = ts;
  
@@ -2170,7 +2476,7 @@ index e1cc98a6d6087244c0951c78526b8d99df242af9..709a1ca9058f7d8e2476ccc9c7212be4
  	gpnet->cb_func(gpnet->cb_data, txts_info->ndev_index+1, GPTPNET_EVENT_TXTS,
  				   &gpnet->event_ts64, &edtxts);
  	return 0;
-@@ -718,10 +850,20 @@ static int process_txts(gptpnet_data_t *gpnet)
+@@ -718,10 +867,20 @@ static int process_txts(gptpnet_data_t *gpnet)
  		if (pop_txts_info(&gpnet->txts_queue, &txts_info) < 0) {
  			break;
  		}
