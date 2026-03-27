@@ -1,2067 +1,824 @@
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
-index 9bbdc348f34297e79bd8e6e34aaa0d4781d56551..3ed03939f25a7f7804952bb58de7d05ae921e7ee 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/enetapp_cpsw.c
-@@ -117,7 +117,8 @@ int EnetApp_initTsn(void)
-         EnetAppAbort("Failed to int tsn!\r\n");
-     }
-     if (cb_lld_init_devs_table(ethdevs, i, gEnetAppCfg.enetType,
--                               gEnetAppCfg.instId) < 0)
-+                               gEnetAppCfg.instId,
-+                               ENETAPP_LLDTSYNC_TS_SOURCE) < 0)
-     {
-         EnetAppAbort("Failed to int devs table!\r\n");
-     }
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_icssg_main.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_icssg_main.c
-index ce20e7475ea62217d72d603614c5b9d2b4705ae1..a60c8dcff673b5de6175bb3996d07b1a2e384c3b 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_icssg_main.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_icssg_main.c
-@@ -146,7 +146,8 @@ static int EnetApp_initTsn(void)
-         EnetAppAbort("Failed to int tsn!\r\n");
-     }
-     if (cb_lld_init_devs_table(ethdevs, i, gEnetAppCfg.perCtxt[gEnetAppCfg.gptpPerIdx].enetType,
--                               gEnetAppCfg.perCtxt[gEnetAppCfg.gptpPerIdx].instId) < 0)
-+                               gEnetAppCfg.perCtxt[gEnetAppCfg.gptpPerIdx].instId,
-+                               ENETAPP_LLDTSYNC_TS_SOURCE) < 0)
-     {
-         EnetAppAbort("Failed to int devs table!\r\n");
-     }
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_cpsw_main.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_cpsw_main.c
-index 4485fb5e057d8fae9e18a7f517bd21ca69839edc..173dcb320f3847bd9266f96ecaf5a85b6f7d2341 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_cpsw_main.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_cpsw_main.c
-@@ -198,7 +198,8 @@ static int EnetApp_initTsn(void)
-         EnetAppAbort("Failed to int tsn!\r\n");
-     }
-     if (cb_lld_init_devs_table(ethdevs, i, gEnetAppParams.enetType,
--                               gEnetAppParams.instId) < 0)
-+                               gEnetAppParams.instId,
-+                               ENETAPP_LLDTSYNC_TS_SOURCE) < 0)
-     {
-         EnetAppAbort("Failed to int devs table!\r\n");
-     }
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_icssg_main.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_icssg_main.c
-index bb721ba73b3cb08ef23df1caf49982dba9460aad..85ac54e037449e401395edc58f2881840a329da0 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_icssg_main.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsnapp_lwip_icssg_main.c
-@@ -192,7 +192,8 @@ static int EnetApp_initTsn(void)
-         EnetAppAbort("Failed to int tsn!\r\n");
-     }
-     if (cb_lld_init_devs_table(ethdevs, i, gEnetAppParams.enetType,
--                               gEnetAppParams.instId) < 0)
-+                               gEnetAppParams.instId,
-+                               ENETAPP_LLDTSYNC_TS_SOURCE) < 0)
-     {
-         EnetAppAbort("Failed to int devs table!\r\n");
-     }
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsninit.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsninit.h
-index 0180d9e89b4bab4e9d480542c9ccc8f9624e8c85..2b26833bcee67d4f5f29b93b31f2a6e2f1b501a0 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsninit.h
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/tsninit.h
-@@ -33,7 +33,14 @@
- #ifndef __TSNINIT_H__
- #define __TSNINIT_H__
- 
--#include <tsn_combase/tilld/lldtype.h>
-+#include <tsn_combase/tilld/lldtsync.h>
-+
-+/* Example-level timestamp backend selector.
-+ * Change this value and rebuild the example to switch lldtsync between the
-+ * legacy CPTS-backed path and the PHY-backed path. */
-+#ifndef ENETAPP_LLDTSYNC_TS_SOURCE
-+#define ENETAPP_LLDTSYNC_TS_SOURCE            (LLDTSYNC_TS_SOURCE_CPTS)
-+#endif
- 
- #if defined(SAFERTOS)
- #define TSN_TSK_STACK_SIZE                         (16U * 1024U)
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+index ca241b24d8e99e3fee066d16b9a00fe748e70887..7938e9dbed92f0ff1bb377d2109901ef95dd69a4 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/examples/networking/tsn/nrt_flow/default_flow_cpsw.c
+@@ -812,6 +812,7 @@ static void EnetApp_rxTask(void *args)
+ #if ENETAPP_ENABLE_PTP_PATH_DEBUG
+             static uint32_t dbgTotal = 0U;
+             static uint32_t dbgPhyStatus = 0U;
++            static uint32_t dbgPsfSeenButNotForwarded = 0U;
+             static uint32_t dbgPtpNonPsf = 0U;
+             static uint32_t dbgOther = 0U;
+             static uint32_t dbgPtpEchoed = 0U;
+@@ -849,31 +850,13 @@ static void EnetApp_rxTask(void *args)
+                     (memcmp(psfFrame, phyStatusHdr, sizeof(phyStatusHdr)) == 0))
+                 {
+                     isPhyStatus = 1U;
+-                    EnetPhy_PtpStatusFrameInArgs inArgs;
+-                    Enet_IoctlPrms psfPrms;
+-                    Enet_MacPort psfMacPort = ENET_MAC_PORT_1;
+-                    int32_t psfStatus = ENET_SOK;
+-
+-                    if (gEnetAppCfg.numMacPorts > 0U)
+-                    {
+-                        psfMacPort = gEnetAppCfg.macPorts[0U];
+-                    }
+-
+-                    inArgs.macPort = psfMacPort;
+-                    inArgs.frame = psfFrame;
+-                    inArgs.frameLen = psfFrameLen;
+-                    ENET_IOCTL_SET_IN_ARGS(&psfPrms, &inArgs);
+-                    ENET_IOCTL(gEnetAppCfg.hEnet,
+-                               gEnetAppCfg.coreId,
+-                               ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
+-                               &psfPrms,
+-                               psfStatus);
+-
+-                    if (psfStatus != ENET_SOK)
++                    dbgPsfSeenButNotForwarded++;
++                    if ((dbgPsfSeenButNotForwarded <= 3U) ||
++                        ((dbgPsfSeenButNotForwarded % 1000U) == 0U))
+                     {
+-                        EnetAppUtils_print("%s: PHY PSF ingest ioctl failed: %d\r\n",
++                        EnetAppUtils_print("%s: default-flow PSF seen but not forwarded count=%u\r\n",
+                                            gEnetAppCfg.name,
+-                                           psfStatus);
++                                           dbgPsfSeenButNotForwarded);
+                     }
+                 }
+             }
+@@ -1206,10 +1189,11 @@ static void EnetApp_rxTask(void *args)
+             else if ((nowMs - dbgLastPrintTimeMs) >= ENETAPP_RX_FRAME_DEBUG_PRINT_INTERVAL_MS)
+             {
+                 EnetAppUtils_print(
+-                    "%s: default-flow summary: total=%u phyStatus=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpBypassed=%u ptpNoTx=%u echoEnabled=%u\r\n",
++                    "%s: default-flow summary: total=%u phyStatus=%u psfSeenButNotForwarded=%u ptpNonPsf=%u other=%u ptpEchoed=%u ptpBypassed=%u ptpNoTx=%u echoEnabled=%u\r\n",
+                     gEnetAppCfg.name,
+                     dbgTotal,
+                     dbgPhyStatus,
++                    dbgPsfSeenButNotForwarded,
+                     dbgPtpNonPsf,
+                     dbgOther,
+                     dbgPtpEchoed,
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
-index a163190edd529f34ebeb750b3fa1ab2817ef35eb..ab47fc4596b6a104a3b7a71a0303bfd3322e54e6 100644
+index 73cf2a0bec0fa5e21f43f79372f239bf96b23af3..a163190edd529f34ebeb750b3fa1ab2817ef35eb 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h
-@@ -215,6 +215,33 @@ enum EnetPhy_Ioctl_e
-      * - outArgs: #EnetPhy_PtpStatusFrameEthHdrOutArgs
+@@ -206,6 +206,15 @@ enum EnetPhy_Ioctl_e
+      * - outArgs: None
       */
-     ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR = ENET_PHY_PUBLIC_IOCTL(15U),
+     ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME = ENET_PHY_PUBLIC_IOCTL(14U),
 +
 +    /*!
-+     * \brief Register a pending TX timestamp lookup with the PHY backend.
++     * \brief Get the fixed Ethernet header used by PHY PTP status frames.
 +     *
 +     * IOCTL parameters:
-+     * -  inArgs: #EnetPhy_PtpTimestampInArgs
-+     * - outArgs: None
++     * -  inArgs: #EnetPhy_GenericInArgs
++     * - outArgs: #EnetPhy_PtpStatusFrameEthHdrOutArgs
 +     */
-+    ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(16U),
-+
-+    /*!
-+     * \brief Retrieve a message-keyed PHY TX timestamp.
-+     *
-+     * IOCTL parameters:
-+     * -  inArgs: #EnetPhy_PtpTimestampInArgs
-+     * - outArgs: uint64_t
-+     */
-+    ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(17U),
-+
-+    /*!
-+     * \brief Retrieve a message-keyed PHY RX timestamp.
-+     *
-+     * IOCTL parameters:
-+     * -  inArgs: #EnetPhy_PtpTimestampInArgs
-+     * - outArgs: uint64_t
-+     */
-+    ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP = ENET_PHY_PUBLIC_IOCTL(18U),
++    ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR = ENET_PHY_PUBLIC_IOCTL(15U),
  };
  
  /*!
-@@ -301,6 +328,24 @@ typedef struct EnetPhy_PtpStatusFrameInArgs_s
+@@ -292,6 +301,15 @@ typedef struct EnetPhy_PtpStatusFrameInArgs_s
      uint32_t frameLen;
  } EnetPhy_PtpStatusFrameInArgs;
  
 +/*!
-+ * \brief Input args for PHY message-keyed PTP timestamp commands.
++ * \brief Output args for #ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR command.
 + */
-+typedef struct EnetPhy_PtpTimestampInArgs_s
++typedef struct EnetPhy_PtpStatusFrameEthHdrOutArgs_s
 +{
-+    /*! Port number */
-+    Enet_MacPort macPort;
++    /*! Fixed Ethernet header bytes used by PHY status frames */
++    uint8_t ethHdr[14U];
++} EnetPhy_PtpStatusFrameEthHdrOutArgs;
 +
-+    /*! PTP message type */
-+    uint8_t msgType;
-+
-+    /*! PTP sequence id */
-+    uint16_t seqId;
-+
-+    /*! PTP domain */
-+    uint8_t domain;
-+} EnetPhy_PtpTimestampInArgs;
-+
- /*!
-  * \brief Output args for #ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR command.
-  */
+ /* ========================================================================== */
+ /*                         Global Variables Declarations                      */
+ /* ========================================================================== */
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
-index 5739d2a36e49e3bc0d975b893c090807a5339ae8..249187f33762515d78023f6bb441d50e95ab7dab 100644
+index 563bca42816e9735a2d72c521947480c515ad37b..5739d2a36e49e3bc0d975b893c090807a5339ae8 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/priv/mod/phy_ioctl_priv.h
-@@ -89,6 +89,9 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_WRITE_REG(EnetPhy_Hand
+@@ -88,6 +88,7 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_READ_REG(EnetPhy_Handl
+ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_C45_WRITE_REG(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
  int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PRINT_REGS(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
  int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
- int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
-+int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
-+int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
-+int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms);
  
  /* ========================================================================== */
  /*                        Deprecated Function Declarations                    */
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
-index 642033b42ff7a84b22dfbf5507f258ce1dab9c63..cd57dec21b2b8858a164ca30f370f2394673e75e 100644
+index 82e41026de5c1411df1a3c324bdc49e218e049d3..642033b42ff7a84b22dfbf5507f258ce1dab9c63 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt.c
-@@ -159,6 +159,9 @@ static EnetPhyMdioDfltIoctlHandlerRegistry_t EnetPhyMdioDfltIoctlHandlerRegistry
+@@ -158,6 +158,7 @@ static EnetPhyMdioDfltIoctlHandlerRegistry_t EnetPhyMdioDfltIoctlHandlerRegistry
+     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_C45_WRITE_REG),
      ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PRINT_REGS),
      ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME),
-     ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR),
-+    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP),
-+    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP),
-+    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP),
++    ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT_DEFAULT(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR),
      ENET_PHY_MDIO_DEFAULT_IOCTL_HANDLER_ENTRY_INIT(ENET_PHY_IOCTL_REGISTER_HANDLER),
  };
  
-@@ -517,4 +520,3 @@ static int32_t EnetPhyMdioDflt_ioctl_handler_default(EnetPhy_Handle hPhy, Enet_I
- }
- 
- 
--
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
-index 4e68c642410976edd5f071a6037e5640401faac2..f99342bfe2a679d218cb75c55511e2a156275fe6 100644
+index 4457cd1762edaf1b256a6128b182574c877d2561..4e68c642410976edd5f071a6037e5640401faac2 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c
-@@ -78,6 +78,14 @@
- /* ========================================================================== */
- /*                          Function Definitions                              */
- /* ========================================================================== */
-+static bool EnetPhyMdioDflt_isExpectedPtpLookupStatus(int32_t status)
-+{
-+    return (status == ENET_SOK) ||
-+           (status == ENET_ENOTFOUND) ||
-+           (status == ENET_ENOTSUPPORTED) ||
-+           (status == ENETPHY_ENOTSUPPORTED);
-+}
-+
- int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_GET_ID(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms)
- {
- #if ((ENET_CFG_TRACE_LEVEL >= ENET_CFG_TRACE_LEVEL_ERROR) && ENET_CFG_IS_OFF(TRACE_DISABLE_INFOSTRING))
-@@ -307,3 +315,94 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR
+@@ -273,3 +273,37 @@ int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME(E
                       macPortId, status);
      return status;
  }
 +
-+int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP(EnetPhy_Handle hPhy,
-+                                                                            Enet_IoctlPrms *prms)
++int32_t  EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR(EnetPhy_Handle hPhy, Enet_IoctlPrms *prms)
 +{
-+    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
++    const EnetPhy_GenericInArgs *inArgs = (const EnetPhy_GenericInArgs *)prms->inArgs;
++    EnetPhy_PtpStatusFrameEthHdrOutArgs *outArgs = (EnetPhy_PtpStatusFrameEthHdrOutArgs *)prms->outArgs;
 +    int32_t status = ENET_SOK;
++    uint32_t macPortId = 0U;
 +
-+    if (inArgs == NULL)
++    if ((inArgs == NULL) || (outArgs == NULL))
 +    {
 +        status = ENETPHY_EBADARGS;
 +    }
-+    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->waitPtpTxTime == NULL))
++    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getStatusFrameEthHeader == NULL))
 +    {
 +        status = ENET_ENOTSUPPORTED;
 +    }
 +    else
 +    {
-+        status = hPhy->hDrv->waitPtpTxTime(hPhy,
-+                                           inArgs->macPort,
-+                                           inArgs->msgType,
-+                                           inArgs->seqId,
-+                                           inArgs->domain);
++        status = hPhy->hDrv->getStatusFrameEthHeader(hPhy,
++                                                     inArgs->macPort,
++                                                     outArgs->ethHdr,
++                                                     sizeof(outArgs->ethHdr));
 +    }
 +
-+    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
-+                     "Port %u: Failed to register PHY TX timestamp wait: %d\n",
-+                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
-+    return status;
-+}
-+
-+int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP(EnetPhy_Handle hPhy,
-+                                                                           Enet_IoctlPrms *prms)
-+{
-+    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
-+    uint64_t *outTs = (uint64_t *)prms->outArgs;
-+    int32_t status = ENET_SOK;
-+
-+    if ((inArgs == NULL) || (outTs == NULL))
++    if (inArgs != NULL)
 +    {
-+        status = ENETPHY_EBADARGS;
-+    }
-+    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getPtpTxTime == NULL))
-+    {
-+        status = ENET_ENOTSUPPORTED;
-+    }
-+    else
-+    {
-+        status = hPhy->hDrv->getPtpTxTime(hPhy,
-+                                          inArgs->macPort,
-+                                          inArgs->msgType,
-+                                          inArgs->seqId,
-+                                          inArgs->domain,
-+                                          outTs);
++        macPortId = ENET_MACPORT_ID(inArgs->macPort);
 +    }
 +
-+    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
-+                     "Port %u: Failed to get PHY TX timestamp: %d\n",
-+                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
-+    return status;
-+}
-+
-+int32_t EnetPhyMdioDflt_ioctl_handler_ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP(EnetPhy_Handle hPhy,
-+                                                                           Enet_IoctlPrms *prms)
-+{
-+    const EnetPhy_PtpTimestampInArgs *inArgs = (const EnetPhy_PtpTimestampInArgs *)prms->inArgs;
-+    uint64_t *outTs = (uint64_t *)prms->outArgs;
-+    int32_t status = ENET_SOK;
-+
-+    if ((inArgs == NULL) || (outTs == NULL))
-+    {
-+        status = ENETPHY_EBADARGS;
-+    }
-+    else if ((hPhy->hDrv == NULL) || (hPhy->hDrv->getPtpRxTime == NULL))
-+    {
-+        status = ENET_ENOTSUPPORTED;
-+    }
-+    else
-+    {
-+        status = hPhy->hDrv->getPtpRxTime(hPhy,
-+                                          inArgs->macPort,
-+                                          inArgs->msgType,
-+                                          inArgs->seqId,
-+                                          inArgs->domain,
-+                                          outTs);
-+    }
-+
-+    ENETTRACE_ERR_IF(!EnetPhyMdioDflt_isExpectedPtpLookupStatus(status),
-+                     "Port %u: Failed to get PHY RX timestamp: %d\n",
-+                     (inArgs != NULL) ? ENET_MACPORT_ID(inArgs->macPort) : 0U, status);
++    ENETTRACE_ERR_IF(status != ENETPHY_SOK,
++                     "Port %u: Failed to get PHY status frame header: %d\n",
++                     macPortId, status);
 +    return status;
 +}
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
-index 290e67efa63c1b40b6f392762cf2abfa0201e9b6..d7fcb772f75bbb9f6d331b432b889c9ee7440885 100644
+index 34295d3116352a88d7915f15e16ea1a1f50b17a5..290e67efa63c1b40b6f392762cf2abfa0201e9b6 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl_register.c
-@@ -107,5 +107,7 @@ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_WRITE_RE
+@@ -106,5 +106,6 @@ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_READ_REG
+ ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_C45_WRITE_REG)
  ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PRINT_REGS)
  ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME)
- ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR)
--
-+ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP)
-+ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP)
-+ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP)
++ENET_PHY_MDIO_DEFAULT_GEN_REGISTER_IOCTL_HANDLER_FXN(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR)
+ 
  
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
-index 95d3fedaf1cf86561c64bd82741a559a71097aae..d54b57f09d448cfca052a0033bbf8c3d26f0cc09 100644
+index bd3db781264ee670b01455c9686186c2edb8d3f0..95d3fedaf1cf86561c64bd82741a559a71097aae 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/core/enet.c
-@@ -654,6 +654,18 @@ static Enet_IoctlValidate gEnetPhy_ioctlValidate[] =
-     ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR,
-                           sizeof(EnetPhy_GenericInArgs),
-                           sizeof(EnetPhy_PtpStatusFrameEthHdrOutArgs)),
+@@ -650,6 +650,10 @@ static Enet_IoctlValidate gEnetPhy_ioctlValidate[] =
+     ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME,
+                           sizeof(EnetPhy_PtpStatusFrameInArgs),
+                           0U),
 +
-+    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP,
-+                          sizeof(EnetPhy_PtpTimestampInArgs),
-+                          0U),
-+
-+    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP,
-+                          sizeof(EnetPhy_PtpTimestampInArgs),
-+                          sizeof(uint64_t)),
-+
-+    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP,
-+                          sizeof(EnetPhy_PtpTimestampInArgs),
-+                          sizeof(uint64_t)),
++    ENET_IOCTL_VALID_PRMS(ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR,
++                          sizeof(EnetPhy_GenericInArgs),
++                          sizeof(EnetPhy_PtpStatusFrameEthHdrOutArgs)),
  };
  #endif
  
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
-index 63ba8df96e97ca95b3c14f22d1b8c079d19ab0ec..b377d60bc1e30d115290bf2ef7b5b67705e94982 100644
+index 9f611d6bd8a8be5edca840aa32aae648ecf8f6f2..63ba8df96e97ca95b3c14f22d1b8c079d19ab0ec 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c
-@@ -126,6 +126,26 @@ static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
-                                                  uint8_t *ethHdr,
-                                                  uint32_t ethHdrLen);
+@@ -121,6 +121,11 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             const uint8_t *frame,
+                                             uint32_t frameLen);
  
-+static int32_t Dp83tc812_waitPtpTxTime(EnetPhy_Handle hPhy,
-+                                       Enet_MacPort macPort,
-+                                       uint8_t msgType,
-+                                       uint16_t seqId,
-+                                       uint8_t domain);
-+
-+static int32_t Dp83tc812_getPtpTxTime(EnetPhy_Handle hPhy,
-+                                      Enet_MacPort macPort,
-+                                      uint8_t msgType,
-+                                      uint16_t seqId,
-+                                      uint8_t domain,
-+                                      uint64_t *ts);
-+
-+static int32_t Dp83tc812_getPtpRxTime(EnetPhy_Handle hPhy,
-+                                      Enet_MacPort macPort,
-+                                      uint8_t msgType,
-+                                      uint16_t seqId,
-+                                      uint8_t domain,
-+                                      uint64_t *ts);
++static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
++                                                 Enet_MacPort macPort,
++                                                 uint8_t *ethHdr,
++                                                 uint32_t ethHdrLen);
 +
  static void Dp83tc812_printRegs(EnetPhy_Handle hPhy);
  
  /* ========================================================================== */
-@@ -144,6 +164,9 @@ EnetPhy_Drv gEnetPhyDrvDp83tc812 =
+@@ -138,6 +143,7 @@ EnetPhy_Drv gEnetPhyDrvDp83tc812 =
+     .readExtReg         = GenericPhy_readExtReg,
      .writeExtReg        = GenericPhy_writeExtReg,
      .processStatusFrame = Dp83tc812_processStatusFrame,
-     .getStatusFrameEthHeader = Dp83tc812_getStatusFrameEthHeader,
-+    .waitPtpTxTime      = Dp83tc812_waitPtpTxTime,
-+    .getPtpTxTime       = Dp83tc812_getPtpTxTime,
-+    .getPtpRxTime       = Dp83tc812_getPtpRxTime,
++    .getStatusFrameEthHeader = Dp83tc812_getStatusFrameEthHeader,
      .printRegs          = Dp83tc812_printRegs,
  };
  
-@@ -193,6 +216,9 @@ static struct dp83tc812_privParams dp83tc812_params = {
-  * - nextStoreIdx     : monotonic sequence number that will be assigned to the next stored entry
-  */
- #define DP83TC812_PSF_RING_DEPTH              (32U)
-+#define DP83TC812_PTP_WAITQ_DEPTH             (16U)
-+#define DP83TC812_PTP_WAIT_TTL_TICKS          (64U)
-+#define DP83TC812_PTP_DOMAIN_WILDCARD         (0xFFU)
- #define DP83TC812_PSF_ETH_HDR_LEN             (14U)
- #define DP83TC812_PSF_PTP_HDR_LEN             (2U)
- #define DP83TC812_PSF_TYPE_LEN                (2U)
-@@ -227,17 +253,36 @@ static struct dp83tc812_privParams dp83tc812_params = {
- #define DP83TC812_PSF_DEBUG_SUMMARY_EVERY_N   (50000U)
- #endif
- 
--typedef struct Dp83tc812_PsfStoreEntry_s
-+typedef struct Dp83tc812_PtpTsEntry_s
- {
-     bool valid;
--    uint16_t psfType;
-     Enet_MacPort macPort;
--    uint64_t ts64;
--    uint16_t seqId;
-     uint8_t msgType;
-+    uint16_t seqId;
-+    uint8_t domain;
-+    uint16_t psfType;
-+    uint64_t ts64;
-     uint16_t hash;
-     uint32_t storeIndex;
--} Dp83tc812_PsfStoreEntry;
-+} Dp83tc812_PtpTsEntry;
-+
-+typedef struct Dp83tc812_PtpReadyQueue_s
-+{
-+    Dp83tc812_PtpTsEntry entries[DP83TC812_PSF_RING_DEPTH];
-+    uint32_t writeIdx;
-+    uint32_t count;
-+} Dp83tc812_PtpReadyQueue;
-+
-+typedef struct Dp83tc812_PtpTxWaitEntry_s
-+{
-+    bool valid;
-+    Enet_MacPort macPort;
-+    uint8_t msgType;
-+    uint16_t seqId;
-+    uint8_t domain;
-+    uint32_t deadlineTick;
-+    uint32_t waitIndex;
-+} Dp83tc812_PtpTxWaitEntry;
- 
- static const uint8_t gDp83tc812PsfEthHdr[DP83TC812_PSF_ETH_HDR_LEN] =
- {
-@@ -246,19 +291,31 @@ static const uint8_t gDp83tc812PsfEthHdr[DP83TC812_PSF_ETH_HDR_LEN] =
-     0x88U, 0xF7U,
- };
- 
--static Dp83tc812_PsfStoreEntry gDp83tc812PsfRing[DP83TC812_PSF_RING_DEPTH];
--static uint32_t gDp83tc812PsfWriteIdx = 0U;
--static uint32_t gDp83tc812PsfCount = 0U;
-+static Dp83tc812_PtpReadyQueue gDp83tc812RxReadyQ;
-+static Dp83tc812_PtpReadyQueue gDp83tc812TxReadyQ;
-+static Dp83tc812_PtpTxWaitEntry gDp83tc812TxWaitQ[DP83TC812_PTP_WAITQ_DEPTH];
-+static uint32_t gDp83tc812TxWaitWriteIdx = 0U;
-+static uint32_t gDp83tc812TxWaitCount = 0U;
-+static uint32_t gDp83tc812OracleTick = 0U;
- static uint32_t gDp83tc812PsfStoreSeq = 0U;
-+static uint32_t gDp83tc812PsfWaitSeq = 0U;
- static uint32_t gDp83tc812PsfIngestCnt = 0U;
- static uint32_t gDp83tc812PsfStoredTxCnt = 0U;
- static uint32_t gDp83tc812PsfStoredRxCnt = 0U;
-+static uint32_t gDp83tc812PsfMatchedTxCnt = 0U;
-+static uint32_t gDp83tc812PsfDroppedTxUnmatchedCnt = 0U;
- static uint32_t gDp83tc812PsfRejectShortCnt = 0U;
- static uint32_t gDp83tc812PsfRejectHdrCnt = 0U;
- static uint32_t gDp83tc812PsfRejectTxShortCnt = 0U;
- static uint32_t gDp83tc812PsfRejectRxShortCnt = 0U;
- static uint32_t gDp83tc812PsfDropEventCnt = 0U;
- static uint32_t gDp83tc812PsfDropUnsupportedCnt = 0U;
-+static uint32_t gDp83tc812PsfWaitRegCnt = 0U;
-+static uint32_t gDp83tc812PsfWaitExpireCnt = 0U;
-+static uint32_t gDp83tc812PsfRxLookupHitCnt = 0U;
-+static uint32_t gDp83tc812PsfRxLookupMissCnt = 0U;
-+static uint32_t gDp83tc812PsfTxLookupHitCnt = 0U;
-+static uint32_t gDp83tc812PsfTxLookupMissCnt = 0U;
- 
- static bool Dp83tc812_psfShouldPrintFrame(void)
- {
-@@ -297,19 +354,28 @@ static void Dp83tc812_psfMaybePrintSummary(EnetPhy_Handle hPhy)
-     if ((gDp83tc812PsfIngestCnt % summaryEveryN) == 0U)
-     {
-         EnetUtils_printf(
--            "PHY %u: phase1 PSF summary ingested=%u storedTx=%u storedRx=%u rejectShort=%u rejectHdr=%u rejectTxShort=%u rejectRxShort=%u dropEvent=%u dropUnsupported=%u ringCount=%u ringWrite=%u nextStoreIdx=%u\r\n",
-+            "PHY %u: phase1 PSF summary ingested=%u storedTx=%u storedRx=%u matchedTx=%u txUnmatched=%u waitReg=%u waitExpire=%u rxReady=%u txReady=%u waitCount=%u rxHit=%u rxMiss=%u txHit=%u txMiss=%u rejectShort=%u rejectHdr=%u rejectTxShort=%u rejectRxShort=%u dropEvent=%u dropUnsupported=%u nextStoreIdx=%u\r\n",
-             hPhy->addr,
-             gDp83tc812PsfIngestCnt,
-             gDp83tc812PsfStoredTxCnt,
-             gDp83tc812PsfStoredRxCnt,
-+            gDp83tc812PsfMatchedTxCnt,
-+            gDp83tc812PsfDroppedTxUnmatchedCnt,
-+            gDp83tc812PsfWaitRegCnt,
-+            gDp83tc812PsfWaitExpireCnt,
-+            gDp83tc812RxReadyQ.count,
-+            gDp83tc812TxReadyQ.count,
-+            gDp83tc812TxWaitCount,
-+            gDp83tc812PsfRxLookupHitCnt,
-+            gDp83tc812PsfRxLookupMissCnt,
-+            gDp83tc812PsfTxLookupHitCnt,
-+            gDp83tc812PsfTxLookupMissCnt,
-             gDp83tc812PsfRejectShortCnt,
-             gDp83tc812PsfRejectHdrCnt,
-             gDp83tc812PsfRejectTxShortCnt,
-             gDp83tc812PsfRejectRxShortCnt,
-             gDp83tc812PsfDropEventCnt,
-             gDp83tc812PsfDropUnsupportedCnt,
--            gDp83tc812PsfCount,
--            gDp83tc812PsfWriteIdx,
-             gDp83tc812PsfStoreSeq);
-     }
- }
-@@ -346,6 +412,176 @@ static bool Dp83tc812_isEventPsfType(uint16_t psfType)
+@@ -340,6 +346,23 @@ static bool Dp83tc812_isEventPsfType(uint16_t psfType)
      return ((psfType == DP83TC812_PSF_EVENT_TYPE0) || (psfType == DP83TC812_PSF_EVENT_TYPE1));
  }
  
-+static uint32_t Dp83tc812_nextOracleTick(void)
++static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
++                                                 Enet_MacPort macPort,
++                                                 uint8_t *ethHdr,
++                                                 uint32_t ethHdrLen)
 +{
-+    gDp83tc812OracleTick++;
++    (void)hPhy;
++    (void)macPort;
 +
-+    if (gDp83tc812OracleTick == 0U)
++    if ((ethHdr == NULL) || (ethHdrLen < sizeof(gDp83tc812PsfEthHdr)))
 +    {
-+        gDp83tc812OracleTick = 1U;
++        return ENETPHY_EBADARGS;
 +    }
 +
-+    return gDp83tc812OracleTick;
-+}
-+
-+static void Dp83tc812_ageTxWaitQ(uint32_t nowTick)
-+{
-+    uint32_t i;
-+
-+    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
-+    {
-+        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
-+
-+        if (waitEntry->valid && (nowTick >= waitEntry->deadlineTick))
-+        {
-+            waitEntry->valid = false;
-+            if (gDp83tc812TxWaitCount > 0U)
-+            {
-+                gDp83tc812TxWaitCount--;
-+            }
-+            gDp83tc812PsfWaitExpireCnt++;
-+        }
-+    }
-+}
-+
-+static void Dp83tc812_pushReadyEntry(Dp83tc812_PtpReadyQueue *queue,
-+                                     const Dp83tc812_PtpTsEntry *entry)
-+{
-+    Dp83tc812_PtpTsEntry *dst = &queue->entries[queue->writeIdx];
-+
-+    if (!dst->valid)
-+    {
-+        queue->count++;
-+    }
-+
-+    *dst = *entry;
-+    dst->valid = true;
-+    queue->writeIdx = (queue->writeIdx + 1U) % DP83TC812_PSF_RING_DEPTH;
-+}
-+
-+static bool Dp83tc812_domainMatches(uint8_t entryDomain, uint8_t queryDomain)
-+{
-+    return ((entryDomain == DP83TC812_PTP_DOMAIN_WILDCARD) || (entryDomain == queryDomain));
-+}
-+
-+static int32_t Dp83tc812_popReadyTs(Dp83tc812_PtpReadyQueue *queue,
-+                                    Enet_MacPort macPort,
-+                                    uint8_t msgType,
-+                                    uint16_t seqId,
-+                                    uint8_t domain,
-+                                    uint64_t *ts)
-+{
-+    uint32_t i;
-+
-+    for (i = 0U; i < DP83TC812_PSF_RING_DEPTH; i++)
-+    {
-+        Dp83tc812_PtpTsEntry *entry = &queue->entries[i];
-+
-+        if (entry->valid &&
-+            (entry->macPort == macPort) &&
-+            (entry->msgType == msgType) &&
-+            (entry->seqId == seqId) &&
-+            Dp83tc812_domainMatches(entry->domain, domain))
-+        {
-+            *ts = entry->ts64;
-+            entry->valid = false;
-+            if (queue->count > 0U)
-+            {
-+                queue->count--;
-+            }
-+            return ENETPHY_SOK;
-+        }
-+    }
-+
-+    return ENET_ENOTFOUND;
-+}
-+
-+static int32_t Dp83tc812_registerTxWait(Enet_MacPort macPort,
-+                                        uint8_t msgType,
-+                                        uint16_t seqId,
-+                                        uint8_t domain)
-+{
-+    uint32_t nowTick = Dp83tc812_nextOracleTick();
-+    uint32_t i;
-+    int32_t slot = -1;
-+
-+    Dp83tc812_ageTxWaitQ(nowTick);
-+
-+    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
-+    {
-+        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
-+
-+        if (waitEntry->valid &&
-+            (waitEntry->macPort == macPort) &&
-+            (waitEntry->msgType == msgType) &&
-+            (waitEntry->seqId == seqId) &&
-+            (waitEntry->domain == domain))
-+        {
-+            waitEntry->deadlineTick = nowTick + DP83TC812_PTP_WAIT_TTL_TICKS;
-+            return ENETPHY_SOK;
-+        }
-+
-+        if ((!waitEntry->valid) && (slot < 0))
-+        {
-+            slot = (int32_t)i;
-+        }
-+    }
-+
-+    if (slot < 0)
-+    {
-+        slot = (int32_t)gDp83tc812TxWaitWriteIdx;
-+    }
-+
-+    if (!gDp83tc812TxWaitQ[slot].valid)
-+    {
-+        gDp83tc812TxWaitCount++;
-+    }
-+
-+    gDp83tc812TxWaitQ[slot].valid = true;
-+    gDp83tc812TxWaitQ[slot].macPort = macPort;
-+    gDp83tc812TxWaitQ[slot].msgType = msgType;
-+    gDp83tc812TxWaitQ[slot].seqId = seqId;
-+    gDp83tc812TxWaitQ[slot].domain = domain;
-+    gDp83tc812TxWaitQ[slot].deadlineTick = nowTick + DP83TC812_PTP_WAIT_TTL_TICKS;
-+    gDp83tc812TxWaitQ[slot].waitIndex = gDp83tc812PsfWaitSeq++;
-+    gDp83tc812TxWaitWriteIdx = ((uint32_t)slot + 1U) % DP83TC812_PTP_WAITQ_DEPTH;
-+    gDp83tc812PsfWaitRegCnt++;
-+
++    memcpy(ethHdr, gDp83tc812PsfEthHdr, sizeof(gDp83tc812PsfEthHdr));
 +    return ENETPHY_SOK;
 +}
 +
-+static bool Dp83tc812_matchTxWait(Enet_MacPort macPort,
-+                                  uint8_t msgType,
-+                                  uint16_t seqId,
-+                                  uint8_t *domain)
-+{
-+    uint32_t nowTick = Dp83tc812_nextOracleTick();
-+    uint32_t i;
-+
-+    Dp83tc812_ageTxWaitQ(nowTick);
-+
-+    for (i = 0U; i < DP83TC812_PTP_WAITQ_DEPTH; i++)
-+    {
-+        Dp83tc812_PtpTxWaitEntry *waitEntry = &gDp83tc812TxWaitQ[i];
-+
-+        if (waitEntry->valid &&
-+            (waitEntry->macPort == macPort) &&
-+            (waitEntry->msgType == msgType) &&
-+            (waitEntry->seqId == seqId))
-+        {
-+            *domain = waitEntry->domain;
-+            waitEntry->valid = false;
-+            if (gDp83tc812TxWaitCount > 0U)
-+            {
-+                gDp83tc812TxWaitCount--;
-+            }
-+            return true;
-+        }
-+    }
-+
-+    return false;
-+}
-+
- static int32_t Dp83tc812_getStatusFrameEthHeader(EnetPhy_Handle hPhy,
-                                                  Enet_MacPort macPort,
-                                                  uint8_t *ethHdr,
-@@ -368,13 +604,10 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
+                                             Enet_MacPort macPort,
                                              const uint8_t *frame,
-                                             uint32_t frameLen)
- {
--    Dp83tc812_PsfStoreEntry *entry;
-     const uint8_t *payload;
-     uint32_t payloadLen;
-     uint16_t ptpHdr;
-     uint16_t psfType;
--    uint32_t slot;
--    bool wrapped;
-     bool printThisFrame;
-     int32_t status = ENETPHY_SOK;
- 
-@@ -451,48 +684,67 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-             }
-             else
-             {
--                slot = gDp83tc812PsfWriteIdx;
--                entry = &gDp83tc812PsfRing[slot];
--                memset(entry, 0, sizeof(*entry));
--                entry->valid = true;
--                entry->psfType = psfType;
--                entry->macPort = macPort;
--                entry->ts64 = Dp83tc812_decodeTs64(payload);
--                entry->storeIndex = gDp83tc812PsfStoreSeq++;
-+                Dp83tc812_PtpTsEntry entry;
-+                uint8_t domain = DP83TC812_PTP_DOMAIN_WILDCARD;
-+                bool matchedWait = false;
-+
-+                memset(&entry, 0, sizeof(entry));
-+                entry.valid = true;
-+                entry.psfType = psfType;
-+                entry.macPort = macPort;
-+                entry.ts64 = Dp83tc812_decodeTs64(payload);
-+                entry.domain = DP83TC812_PTP_DOMAIN_WILDCARD;
-+                entry.storeIndex = gDp83tc812PsfStoreSeq++;
-                 if (payloadLen >= 12U)
-                 {
-                     const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
--                    entry->seqId = Dp83tc812_readLe16(&payload[8U]);
--                    entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
--                    entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
--                }
--
--                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
--                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
--                if (!wrapped)
--                {
--                    gDp83tc812PsfCount++;
-+                    entry.seqId = Dp83tc812_readLe16(&payload[8U]);
-+                    entry.msgType = (uint8_t)(msgTypeHash & 0x000FU);
-+                    entry.hash = (msgTypeHash >> 4U) & 0x0FFFU;
-+                    matchedWait = Dp83tc812_matchTxWait(macPort, entry.msgType, entry.seqId, &domain);
-                 }
-                 if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
-                 {
-                     gDp83tc812PsfStoredTxCnt++;
-                 }
- 
--                if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
--                    (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
--                    printThisFrame)
-+                if (matchedWait)
-                 {
--                    EnetUtils_printf(
--                        "PHY %u: phase1 PSF store TX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
--                        hPhy->addr,
--                        slot,
--                        entry->storeIndex,
--                        gDp83tc812PsfCount,
--                        wrapped ? 1U : 0U,
--                        (unsigned long long)entry->ts64,
--                        entry->seqId,
--                        entry->msgType,
--                        entry->hash);
-+                    entry.domain = domain;
-+                    Dp83tc812_pushReadyEntry(&gDp83tc812TxReadyQ, &entry);
-+                    gDp83tc812PsfMatchedTxCnt++;
-+
-+                    if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
-+                        (DP83TC812_PSF_DEBUG_PRINT_STORES != 0U) &&
-+                        printThisFrame)
-+                    {
-+                        EnetUtils_printf(
-+                            "PHY %u: phase1 PSF store TX idx=%u txReady=%u ts64=%llu seqId=%u msgType=%u domain=%u hash=0x%03x\r\n",
-+                            hPhy->addr,
-+                            entry.storeIndex,
-+                            gDp83tc812TxReadyQ.count,
-+                            (unsigned long long)entry.ts64,
-+                            entry.seqId,
-+                            entry.msgType,
-+                            entry.domain,
-+                            entry.hash);
-+                    }
-+                }
-+                else
-+                {
-+                    gDp83tc812PsfDroppedTxUnmatchedCnt++;
-+                    if ((DP83TC812_PSF_DEBUG_ENABLE != 0U) &&
-+                        (DP83TC812_PSF_DEBUG_PRINT_DROPS != 0U) &&
-+                        printThisFrame)
-+                    {
-+                        EnetUtils_printf(
-+                            "PHY %u: phase1 PSF drop TX unmatched ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
-+                            hPhy->addr,
-+                            (unsigned long long)entry.ts64,
-+                            entry.seqId,
-+                            entry.msgType,
-+                            entry.hash);
-+                    }
-                 }
-             }
-         }
-@@ -515,25 +767,20 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-             else
-             {
-                 const uint16_t msgTypeHash = Dp83tc812_readLe16(&payload[10U]);
--
--                slot = gDp83tc812PsfWriteIdx;
--                entry = &gDp83tc812PsfRing[slot];
--                memset(entry, 0, sizeof(*entry));
--                entry->valid = true;
--                entry->psfType = psfType;
--                entry->macPort = macPort;
--                entry->ts64 = Dp83tc812_decodeTs64(payload);
--                entry->seqId = Dp83tc812_readLe16(&payload[8U]);
--                entry->msgType = (uint8_t)(msgTypeHash & 0x000FU);
--                entry->hash = (msgTypeHash >> 4U) & 0x0FFFU;
--                entry->storeIndex = gDp83tc812PsfStoreSeq++;
--
--                gDp83tc812PsfWriteIdx = (slot + 1U) % DP83TC812_PSF_RING_DEPTH;
--                wrapped = (gDp83tc812PsfCount == DP83TC812_PSF_RING_DEPTH);
--                if (!wrapped)
--                {
--                    gDp83tc812PsfCount++;
--                }
-+                Dp83tc812_PtpTsEntry entry;
-+
-+                memset(&entry, 0, sizeof(entry));
-+                entry.valid = true;
-+                entry.psfType = psfType;
-+                entry.macPort = macPort;
-+                entry.ts64 = Dp83tc812_decodeTs64(payload);
-+                entry.seqId = Dp83tc812_readLe16(&payload[8U]);
-+                entry.msgType = (uint8_t)(msgTypeHash & 0x000FU);
-+                entry.domain = DP83TC812_PTP_DOMAIN_WILDCARD;
-+                entry.hash = (msgTypeHash >> 4U) & 0x0FFFU;
-+                entry.storeIndex = gDp83tc812PsfStoreSeq++;
-+
-+                Dp83tc812_pushReadyEntry(&gDp83tc812RxReadyQ, &entry);
-                 if (DP83TC812_PSF_DEBUG_ENABLE != 0U)
-                 {
-                     gDp83tc812PsfStoredRxCnt++;
-@@ -544,16 +791,14 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-                     printThisFrame)
-                 {
-                     EnetUtils_printf(
--                        "PHY %u: phase1 PSF store RX slot=%u idx=%u count=%u wrapped=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
-+                        "PHY %u: phase1 PSF store RX idx=%u rxReady=%u ts64=%llu seqId=%u msgType=%u hash=0x%03x\r\n",
-                         hPhy->addr,
--                        slot,
--                        entry->storeIndex,
--                        gDp83tc812PsfCount,
--                        wrapped ? 1U : 0U,
--                        (unsigned long long)entry->ts64,
--                        entry->seqId,
--                        entry->msgType,
--                        entry->hash);
-+                        entry.storeIndex,
-+                        gDp83tc812RxReadyQ.count,
-+                        (unsigned long long)entry.ts64,
-+                        entry.seqId,
-+                        entry.msgType,
-+                        entry.hash);
-                 }
-             }
-         }
-@@ -592,6 +837,74 @@ static int32_t Dp83tc812_processStatusFrame(EnetPhy_Handle hPhy,
-     return status;
- }
- 
-+static int32_t Dp83tc812_waitPtpTxTime(EnetPhy_Handle hPhy,
-+                                       Enet_MacPort macPort,
-+                                       uint8_t msgType,
-+                                       uint16_t seqId,
-+                                       uint8_t domain)
-+{
-+    ENET_UNUSED(hPhy);
-+    return Dp83tc812_registerTxWait(macPort, msgType, seqId, domain);
-+}
-+
-+static int32_t Dp83tc812_getPtpTxTime(EnetPhy_Handle hPhy,
-+                                      Enet_MacPort macPort,
-+                                      uint8_t msgType,
-+                                      uint16_t seqId,
-+                                      uint8_t domain,
-+                                      uint64_t *ts)
-+{
-+    int32_t status;
-+
-+    ENET_UNUSED(hPhy);
-+
-+    if (ts == NULL)
-+    {
-+        return ENETPHY_EBADARGS;
-+    }
-+
-+    status = Dp83tc812_popReadyTs(&gDp83tc812TxReadyQ, macPort, msgType, seqId, domain, ts);
-+    if (status == ENETPHY_SOK)
-+    {
-+        gDp83tc812PsfTxLookupHitCnt++;
-+    }
-+    else
-+    {
-+        gDp83tc812PsfTxLookupMissCnt++;
-+    }
-+
-+    return status;
-+}
-+
-+static int32_t Dp83tc812_getPtpRxTime(EnetPhy_Handle hPhy,
-+                                      Enet_MacPort macPort,
-+                                      uint8_t msgType,
-+                                      uint16_t seqId,
-+                                      uint8_t domain,
-+                                      uint64_t *ts)
-+{
-+    int32_t status;
-+
-+    ENET_UNUSED(hPhy);
-+
-+    if (ts == NULL)
-+    {
-+        return ENETPHY_EBADARGS;
-+    }
-+
-+    status = Dp83tc812_popReadyTs(&gDp83tc812RxReadyQ, macPort, msgType, seqId, domain, ts);
-+    if (status == ENETPHY_SOK)
-+    {
-+        gDp83tc812PsfRxLookupHitCnt++;
-+    }
-+    else
-+    {
-+        gDp83tc812PsfRxLookupMissCnt++;
-+    }
-+
-+    return status;
-+}
-+
- /*We only need one master and one slave init script because we are only using one chip revision*/
- /*! \brief Chip specific init scripts */
- 
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
-index 13a54e23fe4e03f54e5c2b2a6eb5f053258b0d29..8ce569bd56e3f4ea1e45ef2fdc09921550c06e21 100644
+index 1f85c7014f9920ec6c9da84d20b552b73f5ebbb3..13a54e23fe4e03f54e5c2b2a6eb5f053258b0d29 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/enetphy_priv.h
-@@ -235,6 +235,35 @@ typedef struct EnetPhy_Drv_s
-                                        uint8_t *ethHdr,
-                                        uint32_t ethHdrLen);
+@@ -217,6 +217,24 @@ typedef struct EnetPhy_Drv_s
+                                   const uint8_t *frame,
+                                   uint32_t frameLen);
  
 +    /*!
-+     * \brief Register a pending TX timestamp lookup for a future event packet.
++     * \brief Get the fixed Ethernet header used by PHY PTP status frames.
++     *
++     * Optional PHY-specific hook used by upper layers to identify status
++     * frames cheaply before forwarding them into processStatusFrame().
++     *
++     * \param hPhy       PHY device handle
++     * \param macPort    MAC port used for the query
++     * \param ethHdr     Output buffer for the Ethernet header bytes
++     * \param ethHdrLen  Size of output buffer in bytes
++     *
++     * \return \ref EnetPhy_ErrorCodes
 +     */
-+    int32_t (*waitPtpTxTime)(EnetPhy_Handle hPhy,
-+                             Enet_MacPort macPort,
-+                             uint8_t msgType,
-+                             uint16_t seqId,
-+                             uint8_t domain);
-+
-+    /*!
-+     * \brief Retrieve a message-keyed TX timestamp from the PHY backend.
-+     */
-+    int32_t (*getPtpTxTime)(EnetPhy_Handle hPhy,
-+                            Enet_MacPort macPort,
-+                            uint8_t msgType,
-+                            uint16_t seqId,
-+                            uint8_t domain,
-+                            uint64_t *ts);
-+
-+    /*!
-+     * \brief Retrieve a message-keyed RX timestamp from the PHY backend.
-+     */
-+    int32_t (*getPtpRxTime)(EnetPhy_Handle hPhy,
-+                            Enet_MacPort macPort,
-+                            uint8_t msgType,
-+                            uint16_t seqId,
-+                            uint8_t domain,
-+                            uint64_t *ts);
++    int32_t (*getStatusFrameEthHeader)(EnetPhy_Handle hPhy,
++                                       Enet_MacPort macPort,
++                                       uint8_t *ethHdr,
++                                       uint32_t ethHdrLen);
 +
      /*! Print PHY registers */
      void (*printRegs)(EnetPhy_Handle hPhy);
  } EnetPhy_Drv;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
+index 0d636551407840ab286eed7e07acccde7a218dcf..35d70ce22b7e25863f2b682e277b4304550c8111 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h
+@@ -220,7 +220,6 @@ typedef struct cb_rawsock_paras{
+ 	uint16_t vlanid; //!< vlan identifier
+ 	uint32_t sndbuf; //!< socket send buffer size, set to 0 to use default value
+ 	uint32_t rcvbuf; //!< socket receive buffer size, set to 0 to use default value
+-	uint8_t rxFilterDstMac[6]; //!< optional initial RX destination MAC filter
+ } cb_rawsock_paras_t;
+ 
+ /**
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
-index 5ff3ffd45088674bfe5c09282ce6434de573fdad..18f15308140792cda73f6ac836b6f976ab3071ad 100644
+index b37dffc439b5a1a354dd6004baaeca204a7d6915..5ff3ffd45088674bfe5c09282ce6434de573fdad 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c
-@@ -58,11 +58,20 @@
- 
- #define MAC_VALID(mac) (((mac)[0]|(mac)[1]|(mac)[2]|(mac)[3]|(mac)[4]|(mac)[5]) != 0)
- #define CB_LLD_PRIORITY_MAX (7U)
-+#define CB_BRINGUP_PROBE_ENTER() \
-+	do { \
-+		static bool printed = false; \
-+		if (!printed) { \
-+			printed = true; \
-+			UB_LOG(UBL_INFO, "%s: enter\n", __func__); \
-+		} \
-+	} while (0)
- 
- static netdev_map_t s_ndevmap_table[MAX_NUMBER_ENET_DEVS];
- static int s_num_devs;
- static uint32_t s_enet_type;
- static uint32_t s_instance_id;
-+static LLDTsyncTsSource s_tsSource = LLDTSYNC_TS_SOURCE_INVALID;
- static cb_socket_lldcfg_update_cb_t s_socket_lldcfg_update_cb;
- 
- /*
-@@ -99,6 +108,7 @@ static int update_enet_cfg(cb_rawsock_paras_t *llrawp, LLDEnetCfg_t *ecfg,
- 	uint32_t i;
- 	int res;
- 
-+	CB_BRINGUP_PROBE_ENTER();
- 	update_cfg->dev = llrawp->dev;
- 	update_cfg->proto = llrawp->proto;
- 	update_cfg->vlanid = llrawp->vlanid;
-@@ -213,6 +223,7 @@ static int alloc_mac_addr(const char *ifname,
- {
- 	int res = -1;
- 
-+	CB_BRINGUP_PROBE_ENTER();
- 	if ((res = find_mac_addr_bydev(sock, ifname, bmac)) != LLDENET_E_NOAVAIL) {
- 		return (res == LLDENET_E_OK? 0: -1);
- 	}
-@@ -248,6 +259,7 @@ int cb_rawsock_open(cb_rawsock_paras_t *llrawp, CB_SOCKET_T *fd, CB_SOCKADDR_LL_
- 	cb_socket_lldcfg_update_t update_cfg;
- 	uint32_t i;
- 
-+	CB_BRINGUP_PROBE_ENTER();
- 	memset(&update_cfg, 0, sizeof(cb_socket_lldcfg_update_t));
- 
- 	UB_LOG(UBL_INFO, "%s:combase-"TSNPKGVERSION"\n", __func__);
-@@ -287,19 +299,25 @@ int cb_rawsock_open(cb_rawsock_paras_t *llrawp, CB_SOCKET_T *fd, CB_SOCKADDR_LL_
- 		   __func__, ecfg.dmaTxChId, ecfg.numRxChannels, ecfg.dmaRxChId[0],
- 		   ecfg.nTxPkts, ecfg.nRxPkts[0], ecfg.pktSize);
- 
-+	UB_LOG(UBL_INFO, "%s: before LLDEnetOpen ethType=0x%x dmaTxChId=%d numRxChannels=%d dmaRxOwner=%d dmaRxShared=%d\n",
-+		   __func__, ecfg.ethType, ecfg.dmaTxChId, ecfg.numRxChannels,
-+		   ecfg.dmaRxOwner, ecfg.dmaRxShared);
- 	sock->lldenet = LLDEnetOpen(&ecfg);
- 	if (sock->lldenet == NULL) {
- 		UB_LOG(UBL_ERROR,"%s:sock->lldenet() failure.\n",
- 			   __func__);
- 		goto error;
- 	}
-+	UB_LOG(UBL_INFO, "%s: after LLDEnetOpen\n", __func__);
- 	sock->vlanid = llrawp->vlanid;
- 	sock->eth_type = llrawp->proto;
-+	UB_LOG(UBL_INFO, "%s: before cb_get_mac_bydev dev=%s\n", __func__, llrawp->dev);
- 	if (cb_get_mac_bydev(sock, llrawp->dev, bmac)) {
- 		UB_LOG(UBL_ERROR,"%s:alloc_mac_addr() failure.\n",
- 			   __func__);
- 		goto error;
- 	}
-+	UB_LOG(UBL_INFO, "%s: after cb_get_mac_bydev dev=%s\n", __func__, llrawp->dev);
- 	strncpy(sock->devname, llrawp->dev, CB_MAX_NETDEVNAME-1);
- 	if (addr != NULL) {
- 		memcpy(addr->sll_addr, bmac, ETH_ALEN);
-@@ -365,6 +383,7 @@ int cb_set_promiscuous_mode(CB_SOCKET_T sfd, const char *dev, bool enable)
- int cb_get_mac_bydev(CB_SOCKET_T sfd, const char *dev, ub_macaddr_t bmac)
- {
- 	int res;
-+	CB_BRINGUP_PROBE_ENTER();
- 	UB_PROTECTED_FUNC(alloc_mac_addr, res, dev, sfd, bmac);
- 	return res;
- }
-@@ -488,7 +507,8 @@ int cb_get_ptpdev_from_netdev(char *netdev, char *ptpdev)
- 
- /* TI lld specific combase APIs */
- static int lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
--						   uint32_t enet_type, uint32_t instance_id)
-+							   uint32_t enet_type, uint32_t instance_id,
-+							   LLDTsyncTsSource tsSource)
- {
- 	int i;
- 
-@@ -521,16 +541,18 @@ static int lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
- 	}
- 	s_enet_type = enet_type;
- 	s_instance_id = instance_id;
-+	s_tsSource = tsSource;
- 
- 	return 0;
+@@ -111,9 +111,6 @@ static int update_enet_cfg(cb_rawsock_paras_t *llrawp, LLDEnetCfg_t *ecfg,
+ 	update_cfg->dmaRxShared = -1;
+ 	update_cfg->dmaRxOwner = -1;
+ 	update_cfg->numRxChannels = 0;
+-	if (MAC_VALID(llrawp->rxFilterDstMac)) {
+-		memcpy(ecfg->dstMacAddr, llrawp->rxFilterDstMac, sizeof(ecfg->dstMacAddr));
+-	}
+ 	if (s_socket_lldcfg_update_cb != NULL) {
+ 		UB_PROTECTED_FUNC(s_socket_lldcfg_update_cb, res, update_cfg);
+ 		if (res != 0) {
+@@ -654,6 +651,15 @@ int cb_lld_recv(CB_SOCKET_T sfd, void *buf, int size,
+ 	return frame.size;
  }
  
- int cb_lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
--						   uint32_t enet_type, uint32_t instance_id)
-+						   uint32_t enet_type, uint32_t instance_id,
-+						   LLDTsyncTsSource tsSource)
- {
- 	int res;
- 	UB_PROTECTED_FUNC(lld_init_devs_table, res, ethdevs,
--					  ndevs, enet_type, instance_id);
-+					  ndevs, enet_type, instance_id, tsSource);
- 	return res;
- }
- 
-@@ -711,7 +733,7 @@ int cb_lld_recv_zerocopy(CB_SOCKET_T sfd, cb_lld_zerocopy_recv_cb_t cblld_recv_c
-  */
- int cb_lld_set_txnotify_cb(CB_SOCKET_T sfd, void (*txnotify_cb)(void *arg), void *arg)
- {
--	if ((sfd == NULL) || (txnotify_cb == NULL)) {
-+	if (sfd == NULL) {
- 		UB_LOG(UBL_ERROR,"%s:invalid param\n", __func__);
- 		return -1;
- 	}
-@@ -759,6 +781,20 @@ int cb_lld_get_type_instance(uint32_t *enet_type, uint32_t *instance_id)
- 	return 0;
- }
- 
-+int cb_lld_get_ts_source(LLDTsyncTsSource *tsSource)
++int cb_lld_process_status_frames(CB_SOCKET_T sfd)
 +{
-+	if (tsSource == NULL) {
-+		UB_LOG(UBL_ERROR,"%s:invalid param\n", __func__);
++	if ((sfd == NULL) || (sfd->lldenet == NULL)) {
 +		return -1;
 +	}
-+	if (s_num_devs == 0) {
-+		UB_LOG(UBL_ERROR, "%s:no valid number of devs\n", __func__);
-+		return -1;
-+	}
-+	*tsSource = s_tsSource;
++
++	return LLDEnetProcessStatusFrames(sfd->lldenet);
++}
++
+ typedef struct {
+ 	cb_lld_zerocopy_recv_cb_t cblld_recv_cb;
+ 	void *cblld_cbarg;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
+index 534c285ed4546fc8cd13ec512b930c8772e48362..0b26832bef6e7bfe0677044ebb3af7f2b9e900ee 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
+@@ -336,6 +336,13 @@ int cb_lld_sendto(CB_SOCKET_T sfd, void *sdata, int psize, int flags,
+ int cb_lld_recv(CB_SOCKET_T sfd, void *buf, int size,
+ 		CB_SOCKADDR_LL_T *addr, int addrsize);
+ 
++/**
++ * @brief Drain PHY status frames from the underlying owner RX queue.
++ * @param sfd socket fd
++ * @return >0 number of drained status frames, 0 if none were drained, <0 on error
++ */
++int cb_lld_process_status_frames(CB_SOCKET_T sfd);
++
+ typedef void (*cb_lld_zerocopy_recv_cb_t)(void *buf, int size,
+ 					CB_SOCKADDR_LL_T *addr, void *cbarg);
+ /**
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
+index 97e611a4867c8e37e5d9501fa63b7b094de74364..3d3a0a4fa549727d72403087976e94367ba76a3b 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet.c
+@@ -651,6 +651,12 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame)
+ 	return res;
+ }
+ 
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet)
++{
++	(void)hLLDEnet;
 +	return 0;
 +}
 +
- int cb_socket_set_lldcfg_update_cb(cb_socket_lldcfg_update_cb_t lldcfg_update_cb)
+ void LLDEnetCfgInit(LLDEnetCfg_t *cfg)
  {
- 	if (s_socket_lldcfg_update_cb != NULL) {
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
-index 0b26832bef6e7bfe0677044ebb3af7f2b9e900ee..fb2268cb888b56769fd1018bb7f0028ec98317e0 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.h
-@@ -288,10 +288,12 @@ typedef int (*cb_socket_lldcfg_update_cb_t)(cb_socket_lldcfg_update_t *update_cf
-  * @param ndevs number of devices in the array
-  * @param enet_type LLD ethernet type
-  * @param instance_id LLD ethernet instance ID
-+ * @param tsSource timestamp backend selected by the example
-  * @return 0: OK, <0: error, detailed error will be printed out.
-  */
- int cb_lld_init_devs_table(lld_ethdev_t *ethdevs, uint32_t ndevs,
--						   uint32_t enet_type, uint32_t instance_id);
-+						   uint32_t enet_type, uint32_t instance_id,
-+						   LLDTsyncTsSource tsSource);
- 
- /**
-  * @brief This function sets the callback for updating LLD config parameters.
-@@ -395,6 +397,13 @@ int cb_lld_set_default_rxdata_cb(CB_SOCKET_T sfd,
-  */
- int cb_lld_get_type_instance(uint32_t *enet_type, uint32_t *instance_id);
- 
-+/**
-+ * @brief Get timestamp source that is set via cb_lld_init_devs_table()
-+ * @param tsSource timestamp source
-+ * @return 0: OK, <0: error, detailed error will be printed out
-+ */
-+int cb_lld_get_ts_source(LLDTsyncTsSource *tsSource);
-+
- /**
-  * @brief Get all virtual network interfaces which were defined for the TI platform.
-  * @param netdevs an array of pointer points to the net devices acquired by this api.
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
-index 14713aa90054ceff8094935521c9dfcc3a298321..6cedcba3e8e9ef3e6e179b1ef792c57699e9a0f6 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
-@@ -61,13 +61,14 @@ struct LLDTSync {
- 	uint32_t instId;
- 	Enet_Handle hEnet;
- 	uint32_t coreId;
-+	LLDTsyncTsSource tsSource;
+ 	if (cfg == NULL) {
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
+index d678f36b5ab5252e7c8413db494c946f49d00a29..f6841992b270dc195be904059690d6e7dd333798 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldenet_priv.h
+@@ -91,6 +91,9 @@ struct LLDEnet {
+ 	uint8_t dstMac[ENET_MAC_ADDR_LEN];
+ 	uint16_t vlanId;
+ 	uint16_t ethType;
++	bool phyStatusFrameHdrValid;
++	bool phyStatusFrameHdrUnavailable;
++	uint8_t phyStatusFrameHdr[14U];
  };
  
- void OpenMcmProtected(Enet_Type enetType, uint32_t *coreKey,
- 					  Enet_Handle *hEnet, Udma_DrvHandle *hUdmaDrv);
- void CloseMcmProtected(Enet_Type enetType);
+ #endif //LLDENET_PRIV_H_
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
+index c9435c34952ef4c0817e6691d5b899352bf32cc4..14713aa90054ceff8094935521c9dfcc3a298321 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/jacinto/lldtsync.c
+@@ -52,6 +52,7 @@
+  */
+ #include <ti/drv/enet/examples/utils/include/enet_apputils.h>
+ #include <ti/drv/enet/examples/utils/include/enet_mcm.h>
++#include <include/core/enet_mod_phy.h>
+ #include "tilld/lldtsync.h"
+ #include "combase_private.h"
  
--LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg)
-+LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg, LLDTsyncTsSource tsSource)
- {
- 	LLDTSync_t *hTSync;
- 
-@@ -82,6 +83,7 @@ LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg)
- 	hTSync->enetType = (Enet_Type)cfg->enetType;
- 	hTSync->instId = cfg->instId;
- 	hTSync->coreId = EnetSoc_getCoreId();
-+	hTSync->tsSource = tsSource;
- 
- 	UB_PROTECTED_FUNC_VOID(OpenMcmProtected, hTSync->enetType,
- 						   NULL, &hTSync->hEnet, NULL);
-@@ -160,6 +162,17 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+@@ -159,6 +160,28 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
  	return LLDENET_E_OK;
  }
  
-+int LLDTsyncPhyWaitTxTs(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+						uint16_t seqId, uint8_t domain)
++int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
++							   uint8_t *frame, uint32_t size)
 +{
-+	(void)hTSync;
-+	(void)txPort;
-+	(void)msgType;
-+	(void)seqId;
-+	(void)domain;
-+	return LLDENET_E_OK;
++	(void)hEnet;
++	(void)coreId;
++	(void)macPort;
++	(void)frame;
++	(void)size;
++	return LLDENET_E_UNSUPPORT;
 +}
 +
- int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
- 							   uint8_t *frame, uint32_t size)
- {
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
-index 909cda71b38bf8b365dad69e5a75a187ff804e49..31ba42dd046bf0070769d01813c403507ba1158b 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
-@@ -72,6 +72,13 @@ typedef struct {
- 	uint32_t instId;
- } LLDTSyncCfg_t;
- 
-+typedef enum
++int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
++									uint8_t *ethHdr, uint32_t size)
 +{
-+	LLDTSYNC_TS_SOURCE_INVALID = 0,
-+	LLDTSYNC_TS_SOURCE_CPTS,
-+	LLDTSYNC_TS_SOURCE_PHY,
-+} LLDTsyncTsSource;
++	(void)hEnet;
++	(void)coreId;
++	(void)macPort;
++	(void)ethHdr;
++	(void)size;
++	return LLDENET_E_UNSUPPORT;
++}
++
+ int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
+ {
+ 	int32_t status = ENET_SOK;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
+index ee72a05ac1fdf0f0ec2feb74e52f53e30e9a2e43..c8c9e4b071d44743e0b35a35cb8917e7d26eda77 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldenet.h
+@@ -281,6 +281,17 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame);
+ int LLDEnetRecvZeroCopy(LLDEnet_t *hLLDEnet,
+ 		void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg);
+ 
++/**
++ * @brief Drain PHY status frames from the owner RX ready queue.
++ *
++ * Status frames are forwarded into the PHY backend and removed from the
++ * owner queue. Non-status packets remain available to the normal receive path.
++ *
++ * @param hLLDEnet Pointer to the LLDEnet instance.
++ * @return >0 number of drained status frames, 0 if none were drained, <0 on error.
++ */
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet);
 +
  /**
-  * @brief Structure representing the LLDTSync instance.
-  */
-@@ -86,9 +93,10 @@ void LLDTSyncCfgInit(LLDTSyncCfg_t *cfg);
- /**
-  * @brief Opens a new LLDTSync instance to access the PTP clock.
-  * @param cfg Pointer to the LLDTSyncCfg_t configuration structure.
-+ * @param tsSource Active timestamp backend to use for lookups.
-  * @return Pointer to the opened LLDTSync instance.
-  */
--LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg);
-+LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg, LLDTsyncTsSource tsSource);
- 
- /**
-  * @brief Closes the LLDTSync instance.
-@@ -122,6 +130,19 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
+  * @brief Checks if the specified port is up.
+  *
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+index b09201080758f2575150d660a332ef563b98b418..909cda71b38bf8b365dad69e5a75a187ff804e49 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/lldtsync.h
+@@ -122,6 +122,30 @@ int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
  int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
  					  uint16_t seqId, uint8_t domain, uint64_t *ts);
  
 +/**
-+ * @brief Register a pending PHY TX timestamp lookup for a future outgoing message.
-+ *        CPTS-backed implementations return success without doing any extra work.
-+ * @param hTSync Pointer to the LLDTSync instance.
-+ * @param txPort Transmit port.
-+ * @param msgType Message type.
-+ * @param seqId Sequence ID.
-+ * @param domain Domain number.
++ * @brief Forward a PHY status frame into the active PHY backend.
++ * @param hEnet Pointer to Enet handle.
++ * @param coreId Enet core id.
++ * @param macPort MAC port on which the frame was received.
++ * @param frame Pointer to frame bytes.
++ * @param size Frame size in bytes.
 + * @return LLDENET_E_OK if successful, an error code otherwise.
 + */
-+int LLDTsyncPhyWaitTxTs(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+						uint16_t seqId, uint8_t domain);
++int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
++							   uint8_t *frame, uint32_t size);
++
++/**
++ * @brief Get the fixed Ethernet header used by PHY status frames.
++ * @param hEnet Pointer to Enet handle.
++ * @param coreId Enet core id.
++ * @param macPort MAC port used for the query.
++ * @param ethHdr Output buffer for Ethernet header bytes.
++ * @param size Size of output buffer in bytes.
++ * @return LLDENET_E_OK if successful, an error code otherwise.
++ */
++int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
++									uint8_t *ethHdr, uint32_t size);
 +
  /**
-  * @brief Forward a PHY status frame into the active PHY backend.
-  * @param hEnet Pointer to Enet handle.
+  * @brief Adjusts the frequency of the PTP clock.
+  * @param hTSync Pointer to the LLDTSync instance.
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
-index 30c1e647a1cdcf96fd1c41aa18946335f632d9d6..23636cc4bb8c7521fe36ab9833276fd8afb664de 100644
+index ac0dcea3e4189a44be073bc3973221ed56ca540d..30c1e647a1cdcf96fd1c41aa18946335f632d9d6 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c
-@@ -64,6 +64,15 @@
- #define LLDENET_PTP_RX_OWNER_DEBUG_FIRST_N        (10U)
- #endif
+@@ -54,6 +54,7 @@
+ #include "lldenet_priv.h"
+ #include "combase_private.h"
+ #include "lldenetext.h"
++#include "tilld/lldtsync.h"
  
-+#define LLDENET_BRINGUP_PROBE_ENTER() \
-+	do { \
-+		static bool printed = false; \
-+		if (!printed) { \
-+			printed = true; \
-+			UB_LOG(UBL_INFO, "%s: enter\n", __func__); \
-+		} \
-+	} while (0)
-+
- extern int32_t EnetApp_filterPriorityPacketsCfg(Enet_Handle hEnet, uint32_t coreId);
- extern int32_t EnetApp_applyClassifier(Enet_Handle hEnet, uint32_t coreId, uint8_t *dstMacAddr, uint32_t vlanId,
- 										uint32_t ethType, uint32_t rxFlowIdx);
-@@ -200,6 +209,8 @@ static void LLDEnetDbgTracePtpRoute(const char *stage,
- static int LLDEnetSetRxDmaCfg(LLDEnet_t *hLLDEnet, LLDEnetCfg_t *cfg)
- {
- 	uint32_t i = 0U;
-+
-+	LLDENET_BRINGUP_PROBE_ENTER();
- 	for(i = 0U; i < cfg->numRxChannels; i++) {
- 		LLDEnetRxDma_t *hLLDRxDma = hLLDEnet->hLLDRxDma[i];
- 		if (hLLDRxDma->nSubRx == LLDENET_SUB_RX_NUM) {
-@@ -324,13 +335,18 @@ static int DmaRxOpen(LLDEnet_t *hLLDEnet)
- 	EnetApp_GetRxDmaHandleOutArgs rxChInfo;
- 	uint32_t i = 0U;
- 
-+	LLDENET_BRINGUP_PROBE_ENTER();
- 	for (i = 0U; i < hLLDEnet->numRxChannels; i++) {
- 		LLDEnetRxDma_t *hLLDRxDma = hLLDEnet->hLLDRxDma[i];
-+		UB_LOG(UBL_INFO, "%s: before getRxDmaHandle rxChId=%d\n",
-+			   __func__, hLLDRxDma->rxChId);
- 		hLLDRxDma->pRxReadyQ = &hLLDEnet->rxReadyQ;
- 		/* Open the RX channel */
- 		rxInArgs.notifyCb = LLDEnetRxNotifyCb;
- 		rxInArgs.cbArg = hLLDRxDma;
- 		EnetApp_getRxDmaHandle(hLLDRxDma->rxChId, &rxInArgs, &rxChInfo);
-+		UB_LOG(UBL_INFO, "%s: after getRxDmaHandle rxChId=%d hRxCh=%p\n",
-+			   __func__, hLLDRxDma->rxChId, rxChInfo.hRxCh);
- 
- #ifdef ENET_SOC_HOSTPORT_DMA_TYPE_UDMA
- 		hLLDRxDma->rxFlowStartIdx = rxChInfo.rxFlowStartIdx;
-@@ -342,7 +358,11 @@ static int DmaRxOpen(LLDEnet_t *hLLDEnet)
- 		EnetAppUtils_assert(hLLDRxDma->hRxCh != NULL);
- 
- 		/* Submit all ready RX buffers to DMA.*/
-+		UB_LOG(UBL_INFO, "%s: before DmaRxQInit rxChId=%d\n",
-+			   __func__, hLLDRxDma->rxChId);
- 		DmaRxQInit(hLLDRxDma);
-+		UB_LOG(UBL_INFO, "%s: after DmaRxQInit rxChId=%d\n",
-+			   __func__, hLLDRxDma->rxChId);
- 	}
- 	/* init the rxReadyQ */
- 	EnetQueue_initQ(&hLLDEnet->rxReadyQ);
-@@ -356,19 +376,32 @@ static int DmaTxOpen(LLDEnet_t *hLLDEnet)
- 	EnetApp_GetTxDmaHandleOutArgs txChInfo;
- 	LLDEnetTxDma_t *hLLDTxDma = hLLDEnet->hLLDTxDma;
- 
-+	LLDENET_BRINGUP_PROBE_ENTER();
- 	/* Open the TX channel */
- 	txInArgs.cbArg = hLLDTxDma;
- 	txInArgs.notifyCb = LLDEnetTxNotifyCb;
-+	UB_LOG(UBL_INFO, "%s: before getTxDmaHandle txChId=%d\n",
-+		   __func__, hLLDTxDma->txChId);
- 	EnetApp_getTxDmaHandle(hLLDTxDma->txChId, &txInArgs, &txChInfo);
-+	UB_LOG(UBL_INFO, "%s: after getTxDmaHandle txChId=%d hTxCh=%p\n",
-+		   __func__, hLLDTxDma->txChId, txChInfo.hTxCh);
- 
- 	hLLDTxDma->txChNum = txChInfo.txChNum;
- 	hLLDTxDma->hTxCh = txChInfo.hTxCh;
- 	EnetAppUtils_assert(hLLDTxDma->hTxCh != NULL);
- 
-+	UB_LOG(UBL_INFO, "%s: before DmaTxQInit txChId=%d\n",
-+		   __func__, hLLDTxDma->txChId);
- 	DmaTxQInit(hLLDTxDma);
-+	UB_LOG(UBL_INFO, "%s: after DmaTxQInit txChId=%d\n",
-+		   __func__, hLLDTxDma->txChId);
- 
-+	UB_LOG(UBL_INFO, "%s: before enableTxEvent txChId=%d\n",
-+		   __func__, hLLDTxDma->txChId);
- 	status = EnetDma_enableTxEvent(hLLDTxDma->hTxCh);
- 	EnetAppUtils_assert(status == ENET_SOK);
-+	UB_LOG(UBL_INFO, "%s: after enableTxEvent txChId=%d\n",
-+		   __func__, hLLDTxDma->txChId);
- 
- 	return 0;
+ #ifndef LLDENET_ENABLE_PTP_RX_OWNER_DEBUG
+ #define LLDENET_ENABLE_PTP_RX_OWNER_DEBUG         (1)
+@@ -450,103 +451,16 @@ static bool IsMacAddrSet(uint8_t *mac)
+ 	return ((mac[0]|mac[1]|mac[2]|mac[3]|mac[4]|mac[5]) != 0);
  }
-@@ -458,6 +491,7 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 
+-static bool IsRxFilterSet(LLDEnetRxFilter_t *filter)
+-{
+-	return ((filter->vlanId > 0U) || (filter->ethType > 0U) ||
+-		IsMacAddrSet(filter->dstMacAddr));
+-}
+-
+-static bool IsRxFilterEqual(const LLDEnetRxFilter_t *lhs,
+-				      const LLDEnetRxFilter_t *rhs)
+-{
+-	return ((lhs->vlanId == rhs->vlanId) &&
+-		(lhs->ethType == rhs->ethType) &&
+-		(memcmp(lhs->dstMacAddr, rhs->dstMacAddr, ENET_MAC_ADDR_LEN) == 0));
+-}
+-
+-static int LLDEnetDeleteFilter(LLDEnet_t *hLLDEnet,
+-				       LLDEnetRxFilter_t *filter,
+-				       uint32_t rxFlowIdx)
+-{
+-	CpswAle_PolicerMatchParams inMatchParam;
+-	CpswAle_PolicerEntryOutArgs outEntry;
+-	CpswAle_DelPolicerEntryInArgs delPolicerInArgs;
+-	Enet_IoctlPrms prms;
+-	int32_t status;
+-
+-	if (!IsRxFilterSet(filter)) {
+-		return LLDENET_E_OK;
+-	}
+-
+-	memset(&inMatchParam, 0, sizeof(inMatchParam));
+-	memset(&outEntry, 0, sizeof(outEntry));
+-	memset(&delPolicerInArgs, 0, sizeof(delPolicerInArgs));
+-
+-	if (IsMacAddrSet(filter->dstMacAddr)) {
+-		inMatchParam.policerMatchEnMask = CPSW_ALE_POLICER_MATCH_MACDST;
+-		inMatchParam.dstMacAddrInfo.portNum = CPSW_ALE_HOST_PORT_NUM;
+-		inMatchParam.dstMacAddrInfo.addr.vlanId = filter->vlanId;
+-		memcpy(&inMatchParam.dstMacAddrInfo.addr.addr[0U],
+-		       &filter->dstMacAddr[0U], ENET_MAC_ADDR_LEN);
+-	}
+-
+-	if (filter->ethType > 0U) {
+-		inMatchParam.policerMatchEnMask |= CPSW_ALE_POLICER_MATCH_ETHERTYPE;
+-		inMatchParam.etherType = filter->ethType;
+-	}
+-
+-	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inMatchParam, &outEntry);
+-	status = Enet_ioctl(hLLDEnet->hEnet, hLLDEnet->coreId,
+-			    CPSW_ALE_IOCTL_GET_POLICER, &prms);
+-	if (status == ENET_ENOTFOUND) {
+-		return LLDENET_E_OK;
+-	}
+-	if (status != ENET_SOK) {
+-		UB_LOG(UBL_ERROR,"Enet_ioctl CPSW_ALE_IOCTL_GET_POLICER failed %d\n", status);
+-		return LLDENET_E_IOCTL;
+-	}
+-
+-	if ((outEntry.threadIdEn != true) || (outEntry.threadId != rxFlowIdx)) {
+-		return LLDENET_E_OK;
+-	}
+-
+-	memcpy(&delPolicerInArgs.policerMatch, &inMatchParam, sizeof(inMatchParam));
+-	delPolicerInArgs.aleEntryMask = inMatchParam.policerMatchEnMask;
+-
+-	ENET_IOCTL_SET_IN_ARGS(&prms, &delPolicerInArgs);
+-	status = Enet_ioctl(hLLDEnet->hEnet, hLLDEnet->coreId,
+-			    CPSW_ALE_IOCTL_DEL_POLICER, &prms);
+-	if (status != ENET_SOK) {
+-		UB_LOG(UBL_ERROR,"Enet_ioctl CPSW_ALE_IOCTL_DEL_POLICER failed %d\n", status);
+-		return LLDENET_E_IOCTL;
+-	}
+-
+-	return LLDENET_E_OK;
+-}
+-
+ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 					  uint32_t vlanId, uint32_t ethType)
+ {
+ 	LLDEnetRxDma_t *hLLDRxDma;
+-	LLDEnetRxFilter_t prevOwnerFilter;
+-	LLDEnetRxFilter_t requestedOwnerFilter;
  	int32_t status = ENET_SOK;
  	uint32_t i;
  
-+	LLDENET_BRINGUP_PROBE_ENTER();
  	if ((hLLDEnet == NULL) || (dstMacAddr == NULL)) {
  		return LLDENET_E_PARAM;
  	}
-@@ -505,13 +539,18 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+-	memset(&prevOwnerFilter, 0, sizeof(prevOwnerFilter));
+-	memset(&requestedOwnerFilter, 0, sizeof(requestedOwnerFilter));
+-	if (vlanId > 0U) {
+-		requestedOwnerFilter.vlanId = vlanId;
+-	}
+-	if (ethType > 0U) {
+-		requestedOwnerFilter.ethType = ethType;
+-	}
+-	if (IsMacAddrSet(dstMacAddr)) {
+-		memcpy(requestedOwnerFilter.dstMacAddr, dstMacAddr, ENET_MAC_ADDR_LEN);
+-	}
+ 	for (i = 0U; i < hLLDEnet->numRxChannels; i++) {
+ 		hLLDRxDma = hLLDEnet->hLLDRxDma[i];
+ 		if (hLLDRxDma == NULL) {
+@@ -569,9 +483,6 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
+ 				memcpy(subRx->rxFilter.dstMacAddr, dstMacAddr, ENET_MAC_ADDR_LEN);
+ 			}
+ 		} else {
+-			if (i == 0U) {
+-				memcpy(&prevOwnerFilter, &hLLDRxDma->ownerFilter, sizeof(prevOwnerFilter));
+-			}
+ 			if (vlanId > 0) {
+ 				hLLDRxDma->ownerFilter.vlanId = vlanId;
+ 			}
+@@ -594,13 +505,6 @@ int LLDEnetFilter(LLDEnet_t *hLLDEnet, uint8_t *dstMacAddr,
  	 * Policers/classifiers aren't effective on this SoC, and configuring them could
  	 * lead to a shortage when enabling multiple TSN modules as it supports only 4.*/
  	if(hLLDRxDma->dmaRxShared == false) {
-+		UB_LOG(UBL_INFO, "%s: before applyClassifier flowIdx=%u vlan=%u ethType=0x%x\n",
-+			   __func__, hLLDRxDma->rxFlowIdx, vlanId, ethType);
+-		if (IsRxFilterEqual(&prevOwnerFilter, &requestedOwnerFilter)) {
+-			return LLDENET_E_OK;
+-		}
+-		status = LLDEnetDeleteFilter(hLLDEnet, &prevOwnerFilter, hLLDRxDma->rxFlowIdx);
+-		if (status != LLDENET_E_OK) {
+-			return status;
+-		}
  		status = EnetApp_applyClassifier(hLLDEnet->hEnet, hLLDEnet->coreId, dstMacAddr,
  											 vlanId, ethType, hLLDRxDma->rxFlowIdx);
  	}
- 	else
- 	{
-+		UB_LOG(UBL_INFO, "%s: before filterPriorityPacketsCfg vlan=%u ethType=0x%x\n",
-+			   __func__, vlanId, ethType);
- 		status = EnetApp_filterPriorityPacketsCfg(hLLDEnet->hEnet, hLLDEnet->coreId);
- 	}
-+	UB_LOG(UBL_INFO, "%s: after classifier/filter status=%d\n", __func__, status);
- 
- 	if (status != ENET_SOK) {
- 		UB_LOG(UBL_ERROR,"Enet_ioctl failed %d\n", status);
-@@ -613,6 +652,7 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 	LLDEnet_t *hLLDEnet;
- 	int res;
- 
-+	LLDENET_BRINGUP_PROBE_ENTER();
- 	if (cfg == NULL) {
- 		UB_LOG(UBL_ERROR,"%s:invalid param\n", __func__);
- 		return NULL;
-@@ -623,9 +663,17 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 	memset(hLLDEnet, 0, sizeof(LLDEnet_t));
- 
- 	hLLDEnet->coreId = EnetSoc_getCoreId();
-+	UB_LOG(UBL_INFO, "%s: before acquireHandleInfo enetType=%u instId=%u coreId=%u\n",
-+		   __func__, cfg->enetType, cfg->instId, hLLDEnet->coreId);
- 	EnetApp_acquireHandleInfo((Enet_Type)cfg->enetType, cfg->instId, &handleInfo);
-+	UB_LOG(UBL_INFO, "%s: after acquireHandleInfo hEnet=%p\n",
-+		   __func__, handleInfo.hEnet);
-+	UB_LOG(UBL_INFO, "%s: before coreAttach enetType=%u instId=%u coreId=%u\n",
-+		   __func__, cfg->enetType, cfg->instId, hLLDEnet->coreId);
- 	EnetApp_coreAttach((Enet_Type)cfg->enetType, cfg->instId,
- 			   hLLDEnet->coreId, &attachInfo);
-+	UB_LOG(UBL_INFO, "%s: after coreAttach coreKey=%u\n",
-+		   __func__, attachInfo.coreKey);
- 	EnetAppUtils_assert(handleInfo.hEnet != NULL);
- 
- 	hLLDEnet->hEnet = handleInfo.hEnet;
-@@ -635,8 +683,12 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 	hLLDEnet->numRxChannels = cfg->numRxChannels;
- 	if (cfg->unusedDmaRx == false) {
- 		uint32_t i = 0U;
-+		UB_LOG(UBL_INFO, "%s: RX bringup start numRxChannels=%u dmaRxOwner=%d\n",
-+			   __func__, cfg->numRxChannels, cfg->dmaRxOwner);
- 		for (i = 0U; i < cfg->numRxChannels; i++) {
- 			/* get RX dma handle */
-+			UB_LOG(UBL_INFO, "%s: before getRxDmaTable idx=%u rxChId=%d\n",
-+				   __func__, i, cfg->dmaRxChId[i]);
- 			hLLDEnet->hLLDRxDma[i] = LLDEnetGetRxDma(cfg->dmaRxChId[i]);
- 			EnetAppUtils_assert(hLLDEnet->hLLDRxDma[i] != NULL);
- 			hLLDEnet->hLLDRxDma[i]->rxChId = cfg->dmaRxChId[i];
-@@ -645,11 +697,17 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 			 * When the hLLDRxDma->hasOwner is true, user can not set cfg->dmaRxOwner
- 			 * to true because only one can own the RX DMA channel */
- 			EnetAppUtils_assert(cfg->dmaRxOwner != hLLDEnet->hLLDRxDma[i]->hasOwner);
-+			UB_LOG(UBL_INFO, "%s: after getRxDmaTable idx=%u rxChId=%d hasOwner=%d\n",
-+				   __func__, i, cfg->dmaRxChId[i], hLLDEnet->hLLDRxDma[i]->hasOwner);
- 		}
-+		UB_LOG(UBL_INFO, "%s: before LLDEnetSetRxDmaCfg\n", __func__);
- 		UB_PROTECTED_FUNC(LLDEnetSetRxDmaCfg, res, hLLDEnet, cfg);
- 		EnetAppUtils_assert(res == 0);
-+		UB_LOG(UBL_INFO, "%s: after LLDEnetSetRxDmaCfg res=%d\n", __func__, res);
- 		if (cfg->dmaRxOwner) {
-+			UB_LOG(UBL_INFO, "%s: before DmaRxOpen\n", __func__);
- 			DmaRxOpen(hLLDEnet);
-+			UB_LOG(UBL_INFO, "%s: after DmaRxOpen\n", __func__);
- 		}
- 		hLLDEnet->dmaRxOwner = cfg->dmaRxOwner;
- 		if (hLLDEnet->dmaRxOwner) {
-@@ -658,13 +716,18 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 			}
- 		}
- 		if (IsMacAddrSet(cfg->dstMacAddr) || (cfg->ethType > 0)) {
-+			UB_LOG(UBL_INFO, "%s: before LLDEnetFilter vlan=%u ethType=0x%x\n",
-+				   __func__, cfg->vlanId, cfg->ethType);
- 			res = LLDEnetFilter(hLLDEnet, cfg->dstMacAddr, cfg->vlanId,
- 					cfg->ethType);
- 			EnetAppUtils_assert(res == 0);
-+			UB_LOG(UBL_INFO, "%s: after LLDEnetFilter res=%d\n", __func__, res);
- 		}
- 	}
- 	if (cfg->unusedDmaTx == false) {
- 		/* get TX dma handle */
-+		UB_LOG(UBL_INFO, "%s: TX bringup start txChId=%d\n",
-+			   __func__, cfg->dmaTxChId);
- 		hLLDEnet->hLLDTxDma = LLDEnetGetTxDma(cfg->dmaTxChId);
- 		EnetAppUtils_assert(hLLDEnet->hLLDTxDma != NULL);
- 		if (hLLDEnet->hLLDTxDma->hasOwner) {
-@@ -686,9 +749,14 @@ LLDEnet_t *LLDEnetOpen(LLDEnetCfg_t *cfg)
- 		hLLDEnet->hLLDTxDma->txNotifyCb = cfg->txNotifyCb;
- 		hLLDEnet->hLLDTxDma->txCbArg = cfg->txCbArg;
- 		hLLDEnet->hLLDTxDma->txChId = cfg->dmaTxChId;
-+		UB_LOG(UBL_INFO, "%s: before DmaTxOpen txChId=%d\n",
-+			   __func__, hLLDEnet->hLLDTxDma->txChId);
- 		DmaTxOpen(hLLDEnet);
-+		UB_LOG(UBL_INFO, "%s: after DmaTxOpen txChId=%d\n",
-+			   __func__, hLLDEnet->hLLDTxDma->txChId);
- 	}
- 
-+	UB_LOG(UBL_INFO, "%s: return success hLLDEnet=%p\n", __func__, hLLDEnet);
- 	return hLLDEnet;
+@@ -971,6 +875,67 @@ static bool IsKnownPsfFrame(const uint8_t *buf, int size)
+ 		(memcmp(buf, phyStatusHdr, sizeof(phyStatusHdr)) == 0));
  }
  
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
-index 22f0b97f3fba951467dabcc6f2a3321ef2db0663..90b99a428e5b46340bfd0b56f7889c5afaab5be4 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
-@@ -63,11 +63,31 @@ extern int32_t EnetApp_enablePortTsEvent(Enet_Handle hEnet, uint32_t coreId,
- extern int32_t EnetApp_getRxTimeStamp(Enet_Handle hEnet, uint32_t coreId,
- 				EnetTimeSync_GetEthTimestampInArgs* inArgs, uint64_t *ts);
- 
-+typedef struct
++static void LLDEnetLogStatusDrain(LLDEnet_t *hLLDEnet)
 +{
-+	int (*getRxTime)(const LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
-+					 uint16_t seqId, uint8_t domain, uint64_t *ts);
-+	int (*getTxTime)(const LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+					 uint16_t seqId, uint8_t domain, uint64_t *ts);
-+	int (*adjTsSourceFreq)(const LLDTSync_t *hTSync, int ppb);
-+	int (*setTsSourceTime)(const LLDTSync_t *hTSync, uint64_t ts);
-+	int (*getTsSourceTime)(const LLDTSync_t *hTSync, uint64_t *ts);
-+	int (*enableTsEvent)(const LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPorts);
-+	int (*phyWaitTxTs)(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+					   uint16_t seqId, uint8_t domain);
-+} LLDTsync_driver;
-+
- struct LLDTSync {
- 	Enet_Type enetType;
- 	uint32_t instId;
- 	Enet_Handle hEnet;
- 	uint32_t coreId;
-+	LLDTsyncTsSource tsSource;
-+	const LLDTsync_driver *tsyncDrv;
-+	bool phyAdjFallbackLogged;
-+	bool phySetFallbackLogged;
-+	bool phyGetFallbackLogged;
-+	bool phyEnableFallbackLogged;
- };
- 
- #ifndef CB_LLDTSYNC_MMEM
-@@ -80,198 +100,134 @@ struct LLDTSync {
- 
- UB_SD_GETMEM_DEF(CB_LLDTSYNC_MMEM, (int)sizeof(LLDTSync_t), CB_LLDTSYNC_INSTNUM);
- 
--LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg)
-+static const char *LLDTSyncGetSourceName(LLDTsyncTsSource tsSource)
- {
--	LLDTSync_t *hTSync;
--	EnetApp_HandleInfo handleInfo;
--
--	if (cfg == NULL) {
--		return NULL;
-+	switch (tsSource) {
-+		case LLDTSYNC_TS_SOURCE_CPTS:
-+			return "CPTS";
-+		case LLDTSYNC_TS_SOURCE_PHY:
-+			return "PHY";
-+		case LLDTSYNC_TS_SOURCE_INVALID:
-+		default:
-+			return "INVALID";
- 	}
--
--	hTSync = (LLDTSync_t*)UB_SD_GETMEM(CB_LLDTSYNC_MMEM, sizeof(LLDTSync_t));
--	EnetAppUtils_assert(hTSync != NULL);
--	memset(hTSync, 0, sizeof(LLDTSync_t));
--
--	hTSync->enetType = (Enet_Type)cfg->enetType;
--	hTSync->instId = cfg->instId;
--	hTSync->coreId = EnetSoc_getCoreId();
--
--	EnetApp_acquireHandleInfo(hTSync->enetType, cfg->instId, &handleInfo);
--	hTSync->hEnet = handleInfo.hEnet;
--	EnetAppUtils_assert(hTSync->hEnet != NULL);
--
--	return hTSync;
- }
- 
--void LLDTSyncCfgInit(LLDTSyncCfg_t *cfg)
-+static int LLDTSyncMapPhyStatus(int32_t status)
- {
--	if (cfg == NULL) {
--		return;
-+	if (status == ENET_SOK) {
-+		return LLDENET_E_OK;
- 	}
--	memset(cfg, 0, sizeof(LLDTSyncCfg_t));
-+	if (status == ENET_ENOTFOUND) {
-+		return LLDENET_E_NOAVAIL;
++	if ((hLLDEnet->statusDrainCalls <= 3U) ||
++		((hLLDEnet->statusDrainCalls % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO,
++			   "%s: calls=%u drainedStatus=%u retainedNonStatus=%u\n",
++			   __func__,
++			   hLLDEnet->statusDrainCalls,
++			   hLLDEnet->statusDrainedFrames,
++			   hLLDEnet->statusRetainedNonStatus);
 +	}
-+	if ((status == ENET_ENOTSUPPORTED) || (status == ENETPHY_ENOTSUPPORTED)) {
++}
++
++static void LLDEnetLogOwnerVisiblePsf(LLDEnet_t *hLLDEnet)
++{
++	if ((hLLDEnet->ownerVisiblePsfCount <= 3U) ||
++		((hLLDEnet->ownerVisiblePsfCount % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO, "%s: owner-psf-visible count=%u\n",
++			   __func__, hLLDEnet->ownerVisiblePsfCount);
++	}
++}
++
++static int LLDEnetEnsureStatusFrameHdr(LLDEnet_t *hLLDEnet)
++{
++	int status;
++
++	if (hLLDEnet->phyStatusFrameHdrValid) {
++		return LLDENET_E_OK;
++	}
++	if (hLLDEnet->phyStatusFrameHdrUnavailable) {
 +		return LLDENET_E_UNSUPPORT;
 +	}
-+	return LLDENET_E_IOCTL;
- }
- 
--void LLDTSyncClose(LLDTSync_t *hTSync)
-+static void LLDTSyncFillPhyTsArgs(EnetPhy_PtpTimestampInArgs *inArgs,
-+								  uint8_t macPort,
-+								  int msgType,
-+								  uint16_t seqId,
-+								  uint8_t domain)
- {
--	if (hTSync == NULL) {
--		return;
--	}
--	UB_SD_RELMEM(CB_LLDTSYNC_MMEM, hTSync);
-+	memset(inArgs, 0, sizeof(*inArgs));
-+	inArgs->macPort = (Enet_MacPort)macPort;
-+	inArgs->msgType = (uint8_t)msgType;
-+	inArgs->seqId = seqId;
-+	inArgs->domain = domain;
- }
- 
--int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
--					  uint16_t seqId, uint8_t domain, uint64_t *ts)
-+static int LLDTSyncGetCptsRxTime(const LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
-+								 uint16_t seqId, uint8_t domain, uint64_t *ts)
- {
- 	int32_t status = ENET_SOK;
- 	EnetTimeSync_GetEthTimestampInArgs inArgs;
- 
--	if ((hTSync == NULL) || (ts == NULL)) {
--		return LLDENET_E_PARAM;
--	}
--	/* For ENET-ICSSG the dmaPktInfo has the time stamp, this API is not valid */
- 	if (Enet_isCpswFamily(hTSync->enetType) == false) {
- 		return LLDENET_E_UNSUPPORT;
- 	}
 +
- 	memset(&inArgs, 0, sizeof(inArgs));
- 	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
--	inArgs.seqId   = seqId;
-+	inArgs.seqId = seqId;
- 	inArgs.portNum = rxPort;
--	inArgs.domain  = domain;
-+	inArgs.domain = domain;
- 
- 	status = EnetApp_getRxTimeStamp(hTSync->hEnet, hTSync->coreId, &inArgs, ts);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl GET_ETH_RX_TIMESTAMP failed %d\n", status);
-+		UB_LOG(UBL_ERROR, "%s: GET_ETH_RX_TIMESTAMP failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
- 	return LLDENET_E_OK;
- }
- 
--int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
--					  uint16_t seqId, uint8_t domain, uint64_t *ts)
-+static int LLDTSyncGetCptsTxTime(const LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+								 uint16_t seqId, uint8_t domain, uint64_t *ts)
- {
- 	int32_t status = ENET_SOK;
- 	Enet_IoctlPrms prms;
- 	EnetTimeSync_GetEthTimestampInArgs inArgs;
- 
--	if ((hTSync == NULL) || (ts == NULL)) {
--		return LLDENET_E_PARAM;
--	}
--
-+	memset(&inArgs, 0, sizeof(inArgs));
- 	inArgs.msgType = (EnetTimeSync_MsgType)msgType;
- 	inArgs.seqId = seqId;
- 	inArgs.portNum = txPort;
--	inArgs.domain  = domain;
-+	inArgs.domain = domain;
- 
- 	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
- 	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
- 			   ENET_TIMESYNC_IOCTL_GET_ETH_TX_TIMESTAMP, &prms, status);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl GET_ETH_TX_TIMESTAMP failed %d\n", status);
--		return LLDENET_E_IOCTL;
--	}
--	return LLDENET_E_OK;
--}
--
--int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
--							   uint8_t *frame, uint32_t size)
--{
--	int32_t status = ENET_SOK;
--	Enet_IoctlPrms prms;
--	EnetPhy_PtpStatusFrameInArgs inArgs;
--
--	if ((hEnet == NULL) || (frame == NULL) || (size == 0U)) {
--		return LLDENET_E_PARAM;
--	}
--
--	inArgs.macPort = (Enet_MacPort)macPort;
--	inArgs.frame = frame;
--	inArgs.frameLen = size;
--	ENET_IOCTL_SET_IN_ARGS(&prms, &inArgs);
--	ENET_IOCTL((Enet_Handle)hEnet, coreId,
--			   ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME, &prms, status);
--	if (status == ENET_ENOTSUPPORTED) {
--		return LLDENET_E_UNSUPPORT;
--	}
--	if (status != ENET_SOK) {
--		return LLDENET_E_IOCTL;
--	}
--
--	return LLDENET_E_OK;
--}
--
--int LLDTSyncGetStatusFrameEthHeader(void *hEnet, uint8_t coreId, uint8_t macPort,
--									uint8_t *ethHdr, uint32_t size)
--{
--	int32_t status = ENET_SOK;
--	Enet_IoctlPrms prms;
--	EnetPhy_GenericInArgs inArgs;
--	EnetPhy_PtpStatusFrameEthHdrOutArgs outArgs;
--
--	if ((hEnet == NULL) || (ethHdr == NULL) || (size < sizeof(outArgs.ethHdr))) {
--		return LLDENET_E_PARAM;
--	}
--
--	memset(&outArgs, 0, sizeof(outArgs));
--	inArgs.macPort = (Enet_MacPort)macPort;
--	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, &outArgs);
--	ENET_IOCTL((Enet_Handle)hEnet, coreId,
--			   ENET_PHY_IOCTL_PTP_GET_STATUS_FRAME_ETHDR, &prms, status);
--	if (status == ENET_ENOTSUPPORTED) {
--		return LLDENET_E_UNSUPPORT;
--	}
--	if (status != ENET_SOK) {
-+		UB_LOG(UBL_ERROR, "%s: GET_ETH_TX_TIMESTAMP failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
--	memcpy(ethHdr, outArgs.ethHdr, sizeof(outArgs.ethHdr));
- 	return LLDENET_E_OK;
- }
- 
--int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
-+static int LLDTSyncAdjCptsFreq(const LLDTSync_t *hTSync, int ppb)
- {
- 	int32_t status = ENET_SOK;
- 	Enet_IoctlPrms prms;
- 	EnetTimeSync_TimestampAdj adjTsInArgs;
--	adjTsInArgs.adjGenf = true;
--
--	if (hTSync == NULL) {
--		return LLDENET_E_PARAM;
--	}
- 
--	adjTsInArgs.adjValInNsecs   = ppb;
-+	memset(&adjTsInArgs, 0, sizeof(adjTsInArgs));
-+	adjTsInArgs.adjGenf = true;
-+	adjTsInArgs.adjValInNsecs = ppb;
- 	adjTsInArgs.intervalInNsecs = 1000000000U;
- 
- 	ENET_IOCTL_SET_IN_ARGS(&prms, &adjTsInArgs);
- 	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
- 			   ENET_TIMESYNC_IOCTL_ADJUST_TIMESTAMP, &prms, status);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl ADJUST_TIMESTAMP failed %d\n", status);
-+		UB_LOG(UBL_ERROR, "%s: ADJUST_TIMESTAMP failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
- 	return LLDENET_E_OK;
- }
- 
--uint64_t LLDTSyncgetCurrentTime(LLDTSync_t *hTSync)
-+static uint64_t LLDTSyncGetCurrentCptsTime(const LLDTSync_t *hTSync)
- {
- 	Enet_IoctlPrms prms;
- 	int32_t status;
- 	uint64_t tsVal = 0ULL;
- 
--	/* Software push event */
- 	ENET_IOCTL_SET_OUT_ARGS(&prms, &tsVal);
--	ENET_IOCTL(hTSync->hEnet, hTSync->coreId, ENET_TIMESYNC_IOCTL_GET_CURRENT_TIMESTAMP, &prms, status);
--	if (status != ENET_SOK)
--	{
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   ENET_TIMESYNC_IOCTL_GET_CURRENT_TIMESTAMP, &prms, status);
-+	if (status != ENET_SOK) {
- 		tsVal = 0ULL;
- 	}
- 
- 	return tsVal;
- }
- 
--int LLDTSyncSetTime(LLDTSync_t *hTSync, uint64_t ts)
-+static int LLDTSyncSetCptsTime(const LLDTSync_t *hTSync, uint64_t ts)
- {
- 	int32_t status = ENET_SOK;
- 	EnetTimeSync_setTimestamp timestamp;
-@@ -280,11 +236,7 @@ int LLDTSyncSetTime(LLDTSync_t *hTSync, uint64_t ts)
- 	uint64_t cptsrefClk;
- 	uint64_t ppsFreq;
- 
--	if (hTSync == NULL) {
--		return LLDENET_E_PARAM;
--	}
--
--	memset((void *)(&timestamp), 0, sizeof(timestamp));
-+	memset(&timestamp, 0, sizeof(timestamp));
- 	timestamp.tsLoadVal = ts;
- 	timestamp.clkMode = 0U;
- 	timestamp.clkSign = 0U;
-@@ -292,88 +244,77 @@ int LLDTSyncSetTime(LLDTSync_t *hTSync, uint64_t ts)
- 	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
- 			   ENET_TIMESYNC_IOCTL_SET_TIMESTAMP, &prms, status);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl SET_TIMESTAMP failed %d\n", status);
-+		UB_LOG(UBL_ERROR, "%s: SET_TIMESTAMP failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
- 	ENET_IOCTL_SET_OUT_ARGS(&prms, &cptsrefClk);
--	ENET_IOCTL(hTSync->hEnet,
--					hTSync->coreId,
--					CPSW_CPTS_IOCTL_GET_CPTS_REFCLK,
--					&prms, status);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   CPSW_CPTS_IOCTL_GET_CPTS_REFCLK, &prms, status);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl GET_CPTS_REFCLK failed %d\n", status);
-+		UB_LOG(UBL_ERROR, "%s: GET_CPTS_REFCLK failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
--	ppsFreq  = gptpgcfg_get_intitem(0,
--									XL4_EXTMOD_XL4GPTP_CONF_TILLD_PPS_REFCLK_HZ,
--									false);
--
--	/* Configure GENF0 to generate pulse signal */
--	/* Length should be same for both master and slave */
--	setGenFInArgs.index  = gptpgcfg_get_intitem(0,
--												XL4_EXTMOD_XL4GPTP_CONF_TILLD_PPS_OUTIDX,
--												false);
-+	ppsFreq = gptpgcfg_get_intitem(0,
-+								   XL4_EXTMOD_XL4GPTP_CONF_TILLD_PPS_REFCLK_HZ,
-+								   false);
- 
--	if (ppsFreq != 0U)
--	{
--		setGenFInArgs.length = cptsrefClk/ppsFreq;
--	}
--	else
--	{
-+	setGenFInArgs.index = gptpgcfg_get_intitem(0,
-+											   XL4_EXTMOD_XL4GPTP_CONF_TILLD_PPS_OUTIDX,
-+											   false);
-+	if (ppsFreq != 0U) {
-+		setGenFInArgs.length = cptsrefClk / ppsFreq;
-+	} else {
- 		setGenFInArgs.length = 0U;
- 	}
- 
--	/* Add one second to compare value to ensure GENF compare happens
--		*  and PPS gets generated then after */
--	setGenFInArgs.compare = ((LLDTSyncgetCurrentTime(hTSync)/1000000000)+1)*1000000000 + 1000000000U;
-+	setGenFInArgs.compare =
-+		((LLDTSyncGetCurrentCptsTime(hTSync) / 1000000000U) + 1U) * 1000000000U + 1000000000U;
- 	setGenFInArgs.polarityInv = false;
--	setGenFInArgs.ppmVal  = 0U;
--	setGenFInArgs.ppmDir  = CPSW_CPTS_GENF_ADJDIR_INCREASE;
-+	setGenFInArgs.ppmVal = 0U;
-+	setGenFInArgs.ppmDir = CPSW_CPTS_GENF_ADJDIR_INCREASE;
- 	setGenFInArgs.ppmMode = ENET_TIMESYNC_ADJMODE_DISABLE;
- 
- 	ENET_IOCTL_SET_IN_ARGS(&prms, &setGenFInArgs);
--	ENET_IOCTL(hTSync->hEnet,
--						hTSync->coreId,
--						CPSW_CPTS_IOCTL_SET_GENF,
--						&prms, status);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   CPSW_CPTS_IOCTL_SET_GENF, &prms, status);
-+	if (status != ENET_SOK) {
-+		UB_LOG(UBL_ERROR, "%s: SET_GENF failed %d\n", __func__, status);
-+		return LLDENET_E_IOCTL;
-+	}
- 
--	if(Enet_isIcssFamily(hTSync->enetType)) {
-+	if (Enet_isIcssFamily(hTSync->enetType)) {
- 		EnetApp_setTimeStampComplete(hTSync->hEnet, hTSync->coreId);
- 	}
-+
- 	return LLDENET_E_OK;
- }
- 
--int LLDTSyncGetTime(LLDTSync_t *hTSync, uint64_t *ts)
-+static int LLDTSyncGetCptsTime(const LLDTSync_t *hTSync, uint64_t *ts)
- {
- 	int32_t status = ENET_SOK;
- 	Enet_IoctlPrms prms;
- 
--	if (hTSync == NULL) {
--		return LLDENET_E_PARAM;
--	}
--	/* Software Time stamp Push event */
- 	ENET_IOCTL_SET_OUT_ARGS(&prms, ts);
- 	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
- 			   ENET_TIMESYNC_IOCTL_GET_CURRENT_TIMESTAMP, &prms, status);
- 	if (status != ENET_SOK) {
--		UB_LOG(UBL_ERROR,"Enet_ioctl GET_CURRENT_TIMESTAMP failed %d\n", status);
-+		UB_LOG(UBL_ERROR, "%s: GET_CURRENT_TIMESTAMP failed %d\n", __func__, status);
- 		return LLDENET_E_IOCTL;
- 	}
- 
- 	return LLDENET_E_OK;
- }
- 
--int LLDTSyncEnableTsEvent(LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPorts)
-+static int LLDTSyncEnableCptsTsEvent(const LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPorts)
- {
- 	uint32_t maxMacPorts = 0U;
- 
--	if ((hTSync == NULL) || (ports == NULL) || (numPorts == 0)) {
-+	if ((ports == NULL) || (numPorts == 0U)) {
- 		return LLDENET_E_PARAM;
- 	}
- 
--	/* No MacPort TS Enable ioctl for ICSSG peripheral */
- 	if (Enet_isCpswFamily(hTSync->enetType)) {
- 		maxMacPorts = Enet_getMacPortMax(hTSync->enetType, hTSync->instId);
- 		if (numPorts > maxMacPorts) {
-@@ -384,3 +325,310 @@ int LLDTSyncEnableTsEvent(LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPort
- 
- 	return LLDENET_E_OK;
- }
-+
-+static int LLDTSyncGetPhyRxTime(const LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
-+								uint16_t seqId, uint8_t domain, uint64_t *ts)
-+{
-+	int32_t status = ENET_SOK;
-+	Enet_IoctlPrms prms;
-+	EnetPhy_PtpTimestampInArgs inArgs;
-+
-+	LLDTSyncFillPhyTsArgs(&inArgs, rxPort, msgType, seqId, domain);
-+	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   ENET_PHY_IOCTL_PTP_GET_RX_TIMESTAMP, &prms, status);
-+	return LLDTSyncMapPhyStatus(status);
-+}
-+
-+static int LLDTSyncGetPhyTxTime(const LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+								uint16_t seqId, uint8_t domain, uint64_t *ts)
-+{
-+	int32_t status = ENET_SOK;
-+	Enet_IoctlPrms prms;
-+	EnetPhy_PtpTimestampInArgs inArgs;
-+
-+	LLDTSyncFillPhyTsArgs(&inArgs, txPort, msgType, seqId, domain);
-+	ENET_IOCTL_SET_INOUT_ARGS(&prms, &inArgs, ts);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   ENET_PHY_IOCTL_PTP_GET_TX_TIMESTAMP, &prms, status);
-+	return LLDTSyncMapPhyStatus(status);
-+}
-+
-+static int LLDTSyncAdjPhyFreq(const LLDTSync_t *hTSync, int ppb)
-+{
-+	LLDTSync_t *sync = (LLDTSync_t *)hTSync;
-+
-+	if (!sync->phyAdjFallbackLogged) {
-+		sync->phyAdjFallbackLogged = true;
-+		UB_LOG(UBL_INFO,
-+			   "%s: PHY tsSource selected but PHY frequency adjust is not available in this AWR tree; using CPTS clock adjust fallback\n",
-+			   __func__);
++	/* Current PHY backend exposes a fixed Layer-2 status frame header. */
++	status = LLDTSyncGetStatusFrameEthHeader(hLLDEnet->hEnet,
++											 (uint8_t)hLLDEnet->coreId,
++											 (uint8_t)ENET_MAC_PORT_1,
++											 hLLDEnet->phyStatusFrameHdr,
++											 sizeof(hLLDEnet->phyStatusFrameHdr));
++	if (status != LLDENET_E_OK) {
++		hLLDEnet->phyStatusFrameHdrUnavailable = true;
++		return status;
 +	}
 +
-+	return LLDTSyncAdjCptsFreq(hTSync, ppb);
-+}
-+
-+static int LLDTSyncSetPhyTime(const LLDTSync_t *hTSync, uint64_t ts)
-+{
-+	LLDTSync_t *sync = (LLDTSync_t *)hTSync;
-+
-+	if (!sync->phySetFallbackLogged) {
-+		sync->phySetFallbackLogged = true;
-+		UB_LOG(UBL_INFO,
-+			   "%s: PHY tsSource selected but PHY set-time is not available in this AWR tree; using CPTS clock set fallback\n",
-+			   __func__);
-+	}
-+
-+	return LLDTSyncSetCptsTime(hTSync, ts);
-+}
-+
-+static int LLDTSyncGetPhyTime(const LLDTSync_t *hTSync, uint64_t *ts)
-+{
-+	LLDTSync_t *sync = (LLDTSync_t *)hTSync;
-+
-+	if (!sync->phyGetFallbackLogged) {
-+		sync->phyGetFallbackLogged = true;
-+		UB_LOG(UBL_INFO,
-+			   "%s: PHY tsSource selected but PHY get-time is not available in this AWR tree; using CPTS clock read fallback\n",
-+			   __func__);
-+	}
-+
-+	return LLDTSyncGetCptsTime(hTSync, ts);
-+}
-+
-+static int LLDTSyncEnablePhyTsEvent(const LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPorts)
-+{
-+	LLDTSync_t *sync = (LLDTSync_t *)hTSync;
-+
-+	(void)ports;
-+	(void)numPorts;
-+	if (!sync->phyEnableFallbackLogged) {
-+		sync->phyEnableFallbackLogged = true;
-+		UB_LOG(UBL_INFO,
-+			   "%s: PHY tsSource selected; no PHY timestamp-event enable hook exists in this AWR tree, assuming driver-side defaults\n",
-+			   __func__);
-+	}
-+
++	hLLDEnet->phyStatusFrameHdrValid = true;
 +	return LLDENET_E_OK;
 +}
 +
-+static int LLDTsyncPhyWaitTxTsDrv(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+								  uint16_t seqId, uint8_t domain)
++static void LLDEnetRecycleRxPkt(EnetDma_Pkt *pktInfo)
 +{
-+	int32_t status = ENET_SOK;
-+	Enet_IoctlPrms prms;
-+	EnetPhy_PtpTimestampInArgs inArgs;
++	LLDEnetRxDma_t *hLLDRxDma = (LLDEnetRxDma_t *)pktInfo->appPriv;
 +
-+	LLDTSyncFillPhyTsArgs(&inArgs, txPort, msgType, seqId, domain);
-+	ENET_IOCTL_SET_IN_ARGS(&prms, &inArgs);
-+	ENET_IOCTL(hTSync->hEnet, hTSync->coreId,
-+			   ENET_PHY_IOCTL_PTP_WAIT_TX_TIMESTAMP, &prms, status);
-+	return LLDTSyncMapPhyStatus(status);
++	EnetAppUtils_assert(hLLDRxDma != NULL);
++	EnetDma_checkPktState(&pktInfo->pktState, ENET_PKTSTATE_MODULE_APP,
++				ENET_PKTSTATE_APP_WITH_READYQ, ENET_PKTSTATE_APP_WITH_FREEQ);
++	EnetQueue_enq(&hLLDRxDma->rxFreeQ, &pktInfo->node);
++	EnetAppUtils_validatePacketState(&hLLDRxDma->rxFreeQ,
++				ENET_PKTSTATE_APP_WITH_FREEQ, ENET_PKTSTATE_APP_WITH_DRIVER);
++	EnetDma_submitRxPktQ(hLLDRxDma->hRxCh, &hLLDRxDma->rxFreeQ);
 +}
 +
-+static const LLDTsync_driver gLLDTSyncCptsDriver = {
-+	.getRxTime = LLDTSyncGetCptsRxTime,
-+	.getTxTime = LLDTSyncGetCptsTxTime,
-+	.adjTsSourceFreq = LLDTSyncAdjCptsFreq,
-+	.setTsSourceTime = LLDTSyncSetCptsTime,
-+	.getTsSourceTime = LLDTSyncGetCptsTime,
-+	.enableTsEvent = LLDTSyncEnableCptsTsEvent,
-+	.phyWaitTxTs = NULL,
-+};
-+
-+static const LLDTsync_driver gLLDTSyncPhyDriver = {
-+	.getRxTime = LLDTSyncGetPhyRxTime,
-+	.getTxTime = LLDTSyncGetPhyTxTime,
-+	.adjTsSourceFreq = LLDTSyncAdjPhyFreq,
-+	.setTsSourceTime = LLDTSyncSetPhyTime,
-+	.getTsSourceTime = LLDTSyncGetPhyTime,
-+	.enableTsEvent = LLDTSyncEnablePhyTsEvent,
-+	.phyWaitTxTs = LLDTsyncPhyWaitTxTsDrv,
-+};
-+
-+LLDTSync_t *LLDTSyncOpen(LLDTSyncCfg_t *cfg, LLDTsyncTsSource tsSource)
+ static int LLDEnetRecvSubRxGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 			void (*LLDEnetRecvCb)(LLDEnetFrame_t *frame, void *cbArg),  void *cbArg)
+ {
+@@ -1051,18 +1016,19 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 	pktSize = pktInfo->sgList.list[0].segmentFilledLen;
+ 	{
+ 		bool isKnownPsf = IsKnownPsfFrame((const uint8_t *)rxFrame, pktSize);
+-		bool dropMissteeredPsf = (hLLDRxDma->dmaRxShared == false) &&
+-					 (hLLDRxDma->ownerFilter.ethType == ETH_P_1588) &&
+-					 isKnownPsf;
+ 		bool ownerAccept = false;
+ 
+ 		if (hLLDRxDma->dmaRxShared == false) {
+-			ownerAccept = !dropMissteeredPsf;
++			ownerAccept = true;
+ 		} else {
+ 			ownerAccept = IsRxFrameForDmaOwner(hLLDRxDma, rxFrame, pktSize);
+ 		}
+ 
+ 		if (ownerAccept) {
++			if (isKnownPsf) {
++				hLLDEnet->ownerVisiblePsfCount++;
++				LLDEnetLogOwnerVisiblePsf(hLLDEnet);
++			}
+ 			LLDEnetDbgTracePtpRoute("owner-accept", hLLDRxDma, rxFrame, pktSize,
+ 								   (uint8_t)pktInfo->rxPortNum, -1);
+ 			if (LLDEnetRecvCb != NULL) { /* zero-copy */
+@@ -1083,10 +1049,6 @@ static int LLDEnetRecvGen(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame,
+ 					res = LLDENET_E_BUFSIZE;
+ 				}
+ 			}
+-		} else if (dropMissteeredPsf) {
+-			LLDEnetDbgTracePtpRoute("owner-drop-psf", hLLDRxDma, rxFrame, pktSize,
+-								   (uint8_t)pktInfo->rxPortNum, -1);
+-			res = LLDENET_E_NOMATCH;
+ 		} else {
+ 			/* only happens when the dmaRxShared = true and this function
+ 			 * is called by owner */
+@@ -1120,6 +1082,87 @@ int LLDEnetRecv(LLDEnet_t *hLLDEnet, LLDEnetFrame_t *frame)
+ 	return LLDEnetRecvGen(hLLDEnet, frame, NULL, NULL);
+ }
+ 
++int LLDEnetProcessStatusFrames(LLDEnet_t *hLLDEnet)
 +{
-+	LLDTSync_t *hTSync;
-+	EnetApp_HandleInfo handleInfo;
++	EnetDma_PktQ retainedQ;
++	EnetDma_PktQ drainedQ;
++	EnetDma_Pkt *pktInfo;
++	uint32_t rxReadyCnt;
++	uint32_t pktSize;
++	uint8_t *rxFrame;
++	bool isStatusFrame;
++	int status;
++	int drained = 0;
++	int retained = 0;
++	int firstError = 0;
 +
-+	if (cfg == NULL) {
-+		return NULL;
++	if ((hLLDEnet == NULL) || (hLLDEnet->dmaRxOwner == false)) {
++		return 0;
 +	}
 +
-+	hTSync = (LLDTSync_t*)UB_SD_GETMEM(CB_LLDTSYNC_MMEM, sizeof(LLDTSync_t));
-+	EnetAppUtils_assert(hTSync != NULL);
-+	memset(hTSync, 0, sizeof(LLDTSync_t));
-+
-+	hTSync->enetType = (Enet_Type)cfg->enetType;
-+	hTSync->instId = cfg->instId;
-+	hTSync->coreId = EnetSoc_getCoreId();
-+	hTSync->tsSource = tsSource;
-+
-+	EnetApp_acquireHandleInfo(hTSync->enetType, cfg->instId, &handleInfo);
-+	hTSync->hEnet = handleInfo.hEnet;
-+	EnetAppUtils_assert(hTSync->hEnet != NULL);
-+
-+	if (tsSource == LLDTSYNC_TS_SOURCE_CPTS) {
-+		hTSync->tsyncDrv = &gLLDTSyncCptsDriver;
-+	} else if (tsSource == LLDTSYNC_TS_SOURCE_PHY) {
-+		hTSync->tsyncDrv = &gLLDTSyncPhyDriver;
-+	} else {
-+		UB_LOG(UBL_ERROR, "%s: invalid timestamp source %d\n", __func__, (int)tsSource);
-+		UB_SD_RELMEM(CB_LLDTSYNC_MMEM, hTSync);
-+		return NULL;
++	rxReadyCnt = EnetQueue_getQCount(&hLLDEnet->rxReadyQ);
++	if (rxReadyCnt == 0U) {
++		return 0;
 +	}
 +
-+	UB_LOG(UBL_INFO, "%s: backend=%s\n", __func__, LLDTSyncGetSourceName(tsSource));
-+	return hTSync;
++	status = LLDEnetEnsureStatusFrameHdr(hLLDEnet);
++	if (status != LLDENET_E_OK) {
++		return 0;
++	}
++
++	EnetQueue_initQ(&retainedQ);
++	EnetQueue_initQ(&drainedQ);
++	hLLDEnet->statusDrainCalls++;
++
++	while (rxReadyCnt-- > 0U) {
++		pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&hLLDEnet->rxReadyQ);
++		if (pktInfo == NULL) {
++			break;
++		}
++
++		EnetAppUtils_assert(pktInfo->sgList.numScatterSegments == 1U);
++		rxFrame = (uint8_t *)EnetUtils_physToVirt((uint64_t)pktInfo->sgList.list[0].bufPtr, NULL);
++		pktSize = pktInfo->sgList.list[0].segmentFilledLen;
++		isStatusFrame = ((pktSize >= sizeof(hLLDEnet->phyStatusFrameHdr)) &&
++						 (memcmp(rxFrame, hLLDEnet->phyStatusFrameHdr,
++								 sizeof(hLLDEnet->phyStatusFrameHdr)) == 0));
++
++		if (!isStatusFrame) {
++			EnetQueue_enq(&retainedQ, &pktInfo->node);
++			retained++;
++			continue;
++		}
++
++		status = LLDTSyncProcPhyStatusFrame(hLLDEnet->hEnet,
++											 (uint8_t)hLLDEnet->coreId,
++											 (uint8_t)pktInfo->rxPortNum,
++											 rxFrame,
++											 pktSize);
++		if ((status != LLDENET_E_OK) && (firstError == 0)) {
++			firstError = status;
++		}
++		EnetQueue_enq(&drainedQ, &pktInfo->node);
++		drained++;
++	}
++
++	EnetQueue_append(&hLLDEnet->rxReadyQ, &retainedQ);
++	hLLDEnet->statusDrainedFrames += (uint32_t)drained;
++	hLLDEnet->statusRetainedNonStatus += (uint32_t)retained;
++	LLDEnetLogStatusDrain(hLLDEnet);
++
++	pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&drainedQ);
++	while (pktInfo != NULL) {
++		LLDEnetRecycleRxPkt(pktInfo);
++		pktInfo = (EnetDma_Pkt *)EnetQueue_deq(&drainedQ);
++	}
++
++	if (firstError != 0) {
++		return firstError;
++	}
++
++	return drained;
 +}
 +
-+void LLDTSyncCfgInit(LLDTSyncCfg_t *cfg)
-+{
-+	if (cfg == NULL) {
-+		return;
-+	}
-+	memset(cfg, 0, sizeof(LLDTSyncCfg_t));
-+}
-+
-+void LLDTSyncClose(LLDTSync_t *hTSync)
-+{
-+	if (hTSync == NULL) {
-+		return;
-+	}
-+	UB_SD_RELMEM(CB_LLDTSYNC_MMEM, hTSync);
-+}
-+
-+int LLDTSyncGetRxTime(LLDTSync_t *hTSync, uint8_t rxPort, int msgType,
-+					  uint16_t seqId, uint8_t domain, uint64_t *ts)
-+{
-+	if ((hTSync == NULL) || (ts == NULL)) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->getRxTime == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->getRxTime(hTSync, rxPort, msgType, seqId, domain, ts);
-+}
-+
-+int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+					  uint16_t seqId, uint8_t domain, uint64_t *ts)
-+{
-+	if ((hTSync == NULL) || (ts == NULL)) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->getTxTime == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->getTxTime(hTSync, txPort, msgType, seqId, domain, ts);
-+}
-+
-+int LLDTsyncPhyWaitTxTs(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
-+						uint16_t seqId, uint8_t domain)
-+{
-+	if (hTSync == NULL) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->phyWaitTxTs == NULL)) {
-+		return LLDENET_E_OK;
-+	}
-+	return hTSync->tsyncDrv->phyWaitTxTs(hTSync, txPort, msgType, seqId, domain);
-+}
-+
+ void LLDEnetCfgInit(LLDEnetCfg_t *cfg)
+ {
+ 	uint32_t i;
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+index db8fd66001978904f28b6c3f6f9e28f5c1eccfb5..04431263dc0b43083572976d96998b8a20bc6ab9 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet_priv.h
+@@ -158,6 +158,13 @@ struct LLDEnet {
+ 	uint32_t instId;
+ 	/* only dmaRxOwner=true has the permission to call the SDK RX DMA APIs*/
+ 	bool dmaRxOwner;
++	bool phyStatusFrameHdrValid;
++	bool phyStatusFrameHdrUnavailable;
++	uint8_t phyStatusFrameHdr[14U];
++	uint32_t statusDrainCalls;
++	uint32_t statusDrainedFrames;
++	uint32_t statusRetainedNonStatus;
++	uint32_t ownerVisiblePsfCount;
+ 	/* valid only when dmaRxOwner = false, and numRxChannels = 1*/
+ 	int subRxIndex;
+ 	/* true when Rx timestamp is in the dmaPktInfo, should be set as true for ICSSG */
+diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+index b6ea8506a973bb6cacfbe0c06b9dcdcac876145d..22f0b97f3fba951467dabcc6f2a3321ef2db0663 100644
+--- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
++++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c
+@@ -51,6 +51,7 @@
+  * lldtsync.c
+ */
+ #include <enet_mcm.h>
++#include <include/core/enet_mod_phy.h>
+ #include "tilld/lldtsync.h"
+ #include "combase_private.h"
+ #include <tsn_gptp/gptpconf/xl4-extmod-xl4gptp.h>
+@@ -173,6 +174,61 @@ int LLDTSyncGetTxTime(LLDTSync_t *hTSync, uint8_t txPort, int msgType,
+ 	return LLDENET_E_OK;
+ }
+ 
 +int LLDTSyncProcPhyStatusFrame(void *hEnet, uint8_t coreId, uint8_t macPort,
 +							   uint8_t *frame, uint32_t size)
 +{
@@ -2117,408 +874,577 @@ index 22f0b97f3fba951467dabcc6f2a3321ef2db0663..90b99a428e5b46340bfd0b56f7889c5a
 +	return LLDENET_E_OK;
 +}
 +
-+int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
-+{
-+	if (hTSync == NULL) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->adjTsSourceFreq == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->adjTsSourceFreq(hTSync, ppb);
-+}
-+
-+int LLDTSyncSetTime(LLDTSync_t *hTSync, uint64_t ts)
-+{
-+	if (hTSync == NULL) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->setTsSourceTime == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->setTsSourceTime(hTSync, ts);
-+}
-+
-+int LLDTSyncGetTime(LLDTSync_t *hTSync, uint64_t *ts)
-+{
-+	if ((hTSync == NULL) || (ts == NULL)) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->getTsSourceTime == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->getTsSourceTime(hTSync, ts);
-+}
-+
-+int LLDTSyncEnableTsEvent(LLDTSync_t *hTSync, uint32_t ports[], uint32_t numPorts)
-+{
-+	if ((hTSync == NULL) || (ports == NULL) || (numPorts == 0U)) {
-+		return LLDENET_E_PARAM;
-+	}
-+	if ((hTSync->tsyncDrv == NULL) || (hTSync->tsyncDrv->enableTsEvent == NULL)) {
-+		return LLDENET_E_UNSUPPORT;
-+	}
-+	return hTSync->tsyncDrv->enableTsEvent(hTSync, ports, numPorts);
-+}
+ int LLDTSyncAdjFreq(LLDTSync_t *hTSync, int ppb)
+ {
+ 	int32_t status = ENET_SOK;
 diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-index e1cc98a6d6087244c0951c78526b8d99df242af9..5ad35b88b527aee8dbd1def3f8e10a582494604a 100644
+index 63c19e9d72f52d2e68f64da06e8e54caac701ae6..e1cc98a6d6087244c0951c78526b8d99df242af9 100644
 --- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
 +++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c
-@@ -118,13 +118,62 @@ struct gptpnet_data {
+@@ -110,12 +110,19 @@ struct gptpnet_data {
+ 	int64_t event_ts64;
+ 	uint64_t next_tout64;
+ 	CB_SEM_T semaphore;
++	CB_SEM_T statPktSem;
++	CB_THREAD_T statusThread;
+ 	LLDTSync_t *lldtsync;
+ 	txts_queue_t txts_queue;
+ 	int64_t last_ts64;
  	ptpkt_t rxbuf;
  	CB_SOCKET_T lldsock;
  	uint8_t gptpInstanceIndex;
-+	LLDTsyncTsSource tsSource;
- 	bool statusThreadRunning;
- 	bool bStopped;
- 	uint32_t statusWakeups;
- 	uint32_t statusFramesDrained;
- 	uint32_t statusWakeupsNoStatus;
-+	uint32_t statusSemaphorePosts;
-+	uint32_t txtsQueued;
-+	uint32_t txtsDequeued;
-+	uint32_t txtsSendUndo;
-+	uint32_t txtsLookupNoAvail;
-+	uint32_t txtsLookupErr;
-+	uint32_t txtsProvided;
-+	uint32_t txtsWaitErr;
++	bool statusThreadRunning;
++	bool bStopped;
++	uint32_t statusWakeups;
++	uint32_t statusFramesDrained;
++	uint32_t statusWakeupsNoStatus;
  };
  
-+static const char *gptpnet_ts_source_name(LLDTsyncTsSource tsSource)
-+{
-+	switch (tsSource) {
-+		case LLDTSYNC_TS_SOURCE_CPTS:
-+			return "CPTS";
-+		case LLDTSYNC_TS_SOURCE_PHY:
-+			return "PHY";
-+		case LLDTSYNC_TS_SOURCE_INVALID:
-+		default:
-+			return "INVALID";
-+	}
-+}
-+
-+static bool gptpnet_should_log_counter(uint32_t count, uint32_t interval)
-+{
-+	return ((count <= 3U) || ((interval > 0U) && ((count % interval) == 0U)));
-+}
-+
-+static void gptpnet_log_txts_summary(gptpnet_data_t *gpnet,
-+									 const char *reason,
-+									 uint32_t reasonCount)
-+{
-+	if (!gptpnet_should_log_counter(reasonCount, 256U)) {
-+		return;
-+	}
-+
-+	UB_LOG(UBL_INFO,
-+		   "%s:%s tsSource=%s queued=%u dequeued=%u undo=%u noavail=%u err=%u provided=%u waiterr=%u\n",
-+		   __func__,
-+		   reason,
-+		   gptpnet_ts_source_name(gpnet->tsSource),
-+		   gpnet->txtsQueued,
-+		   gpnet->txtsDequeued,
-+		   gpnet->txtsSendUndo,
-+		   gpnet->txtsLookupNoAvail,
-+		   gpnet->txtsLookupErr,
-+		   gpnet->txtsProvided,
-+		   gpnet->txtsWaitErr);
-+}
-+
  #if LLD_GPTPNET_ENABLE_RX_DEBUG
- typedef struct {
- 	uint32_t sync;
-@@ -261,7 +310,10 @@ static int pop_txts_info(txts_queue_t *q, txts_info_t *out)
- static void tx_notify_cb(void *arg)
- {
- 	gptpnet_data_t *gpnet = (gptpnet_data_t *)arg;
--	CB_SEM_POST(&gpnet->semaphore);
-+
-+	if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_CPTS) {
-+		CB_SEM_POST(&gpnet->semaphore);
-+	}
+@@ -251,12 +258,74 @@ static int pop_txts_info(txts_queue_t *q, txts_info_t *out)
  }
  
  /* do not call log or any blocking function inside */
-@@ -269,7 +321,7 @@ static void rx_notify_cb(void *arg)
+-static void txrx_notify_cb(void *arg)
++static void tx_notify_cb(void *arg)
  {
  	gptpnet_data_t *gpnet = (gptpnet_data_t *)arg;
+ 	CB_SEM_POST(&gpnet->semaphore);
+ }
  
--	if (gpnet->statusThreadRunning) {
-+	if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) {
- 		CB_SEM_POST(&gpnet->statPktSem);
- 	} else {
- 		CB_SEM_POST(&gpnet->semaphore);
-@@ -278,13 +330,15 @@ static void rx_notify_cb(void *arg)
- 
- static void gptpnet_log_status_worker(gptpnet_data_t *gpnet)
++/* do not call log or any blocking function inside */
++static void rx_notify_cb(void *arg)
++{
++	gptpnet_data_t *gpnet = (gptpnet_data_t *)arg;
++
++	if (gpnet->statusThreadRunning) {
++		CB_SEM_POST(&gpnet->statPktSem);
++	} else {
++		CB_SEM_POST(&gpnet->semaphore);
++	}
++}
++
++static void gptpnet_log_status_worker(gptpnet_data_t *gpnet)
++{
++	if ((gpnet->statusWakeups <= 3U) || ((gpnet->statusWakeups % 1000U) == 0U)) {
++		UB_LOG(UBL_INFO,
++			   "%s: wakeups=%u drained=%u empty=%u\n",
++			   __func__,
++			   gpnet->statusWakeups,
++			   gpnet->statusFramesDrained,
++			   gpnet->statusWakeupsNoStatus);
++	}
++}
++
++static void *gptpnet_statusFrameProcTask(void *args)
++{
++	gptpnet_data_t *gpnet = (gptpnet_data_t *)args;
++
++	UB_LOG(UBL_INFO, "%s: status worker started\n", __func__);
++
++	while (1) {
++		CB_SEM_WAIT(&gpnet->statPktSem);
++		if (gpnet->bStopped) {
++			break;
++		}
++
++		gpnet->statusWakeups++;
++		if (gpnet->lldsock != NULL) {
++			int drained = cb_lld_process_status_frames(gpnet->lldsock);
++			if (drained > 0) {
++				gpnet->statusFramesDrained += (uint32_t)drained;
++			} else if (drained == 0) {
++				gpnet->statusWakeupsNoStatus++;
++			} else {
++				UB_LOG(UBL_ERROR, "%s: status drain failed %d\n", __func__, drained);
++			}
++		} else {
++			gpnet->statusWakeupsNoStatus++;
++		}
++
++		gptpnet_log_status_worker(gpnet);
++		CB_SEM_POST(&gpnet->semaphore);
++	}
++
++	UB_LOG(UBL_INFO, "%s: status worker exiting wakeups=%u drained=%u empty=%u\n",
++		   __func__,
++		   gpnet->statusWakeups,
++		   gpnet->statusFramesDrained,
++		   gpnet->statusWakeupsNoStatus);
++	return NULL;
++}
++
+ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 					   netdevice_t *ndev, const char *netdev)
  {
--	if ((gpnet->statusWakeups <= 3U) || ((gpnet->statusWakeups % 1000U) == 0U)) {
-+	if (gptpnet_should_log_counter(gpnet->statusWakeups, 1000U)) {
- 		UB_LOG(UBL_INFO,
--			   "%s: wakeups=%u drained=%u empty=%u\n",
-+			   "%s: tsSource=%s wakeups=%u drained=%u empty=%u reposts=%u\n",
- 			   __func__,
-+			   gptpnet_ts_source_name(gpnet->tsSource),
- 			   gpnet->statusWakeups,
- 			   gpnet->statusFramesDrained,
--			   gpnet->statusWakeupsNoStatus);
-+			   gpnet->statusWakeupsNoStatus,
-+			   gpnet->statusSemaphorePosts);
- 	}
- }
+@@ -285,14 +354,13 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 			gptpInstanceIndex, XL4_EXTMOD_XL4GPTP_SOCKET_TXPRIORITY,
+ 			YDBI_CONFIG);
+ 		llrawp.rw_type=CB_RAWSOCK_RDWR;
+-		memcpy(llrawp.rxFilterDstMac, destmac, sizeof(llrawp.rxFilterDstMac));
  
-@@ -305,6 +359,8 @@ static void *gptpnet_statusFrameProcTask(void *args)
- 			int drained = cb_lld_process_status_frames(gpnet->lldsock);
- 			if (drained > 0) {
- 				gpnet->statusFramesDrained += (uint32_t)drained;
-+				gpnet->statusSemaphorePosts++;
-+				CB_SEM_POST(&gpnet->semaphore);
- 			} else if (drained == 0) {
- 				gpnet->statusWakeupsNoStatus++;
- 			} else {
-@@ -315,14 +371,15 @@ static void *gptpnet_statusFrameProcTask(void *args)
- 		}
- 
- 		gptpnet_log_status_worker(gpnet);
--		CB_SEM_POST(&gpnet->semaphore);
- 	}
- 
--	UB_LOG(UBL_INFO, "%s: status worker exiting wakeups=%u drained=%u empty=%u\n",
-+	UB_LOG(UBL_INFO, "%s: tsSource=%s exiting wakeups=%u drained=%u empty=%u reposts=%u\n",
- 		   __func__,
-+		   gptpnet_ts_source_name(gpnet->tsSource),
- 		   gpnet->statusWakeups,
- 		   gpnet->statusFramesDrained,
--		   gpnet->statusWakeupsNoStatus);
-+		   gpnet->statusWakeupsNoStatus,
-+		   gpnet->statusSemaphorePosts);
- 	return NULL;
- }
- 
-@@ -359,8 +416,44 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
+ 		gptpgcfg_releasedb(gptpInstanceIndex);
  		if(cb_rawsock_open(&llrawp, &gpnet->lldsock, NULL, NULL, srcmac) < 0) {
  			return -1;
  		}
--		cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet);
--		cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet);
-+		if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) {
-+			if (cb_lld_set_txnotify_cb(gpnet->lldsock, NULL, gpnet) < 0) {
-+				UB_LOG(UBL_ERROR, "%s: failed to set TX notify policy=off tsSource=%s\n",
-+					   __func__, gptpnet_ts_source_name(gpnet->tsSource));
-+				cb_rawsock_close(gpnet->lldsock);
-+				gpnet->lldsock = NULL;
-+				return -1;
-+			}
-+			UB_LOG(UBL_INFO, "%s: TX notify configured policy=off tsSource=%s\n",
-+				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
-+		} else if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_CPTS) {
-+			if (cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet) < 0) {
-+				UB_LOG(UBL_ERROR, "%s: failed to set TX notify policy=main tsSource=%s\n",
-+					   __func__, gptpnet_ts_source_name(gpnet->tsSource));
-+				cb_rawsock_close(gpnet->lldsock);
-+				gpnet->lldsock = NULL;
-+				return -1;
-+			}
-+			UB_LOG(UBL_INFO, "%s: TX notify configured policy=main tsSource=%s\n",
-+				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
-+		} else {
-+			UB_LOG(UBL_ERROR, "%s: invalid timestamp source %d\n",
-+				   __func__, (int)gpnet->tsSource);
-+			cb_rawsock_close(gpnet->lldsock);
-+			gpnet->lldsock = NULL;
-+			return -1;
-+		}
-+		if (cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet) < 0) {
-+			UB_LOG(UBL_ERROR, "%s: failed to set RX notify tsSource=%s\n",
-+				   __func__, gptpnet_ts_source_name(gpnet->tsSource));
-+			cb_rawsock_close(gpnet->lldsock);
-+			gpnet->lldsock = NULL;
-+			return -1;
-+		}
-+		UB_LOG(UBL_INFO, "%s: RX notify configured policy=%s tsSource=%s\n",
-+			   __func__,
-+			   (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) ? "status" : "main",
-+			   gptpnet_ts_source_name(gpnet->tsSource));
+-		cb_lld_set_txnotify_cb(gpnet->lldsock, txrx_notify_cb, gpnet);
+-		cb_lld_set_rxnotify_cb(gpnet->lldsock, txrx_notify_cb, gpnet);
++		cb_lld_set_txnotify_cb(gpnet->lldsock, tx_notify_cb, gpnet);
++		cb_lld_set_rxnotify_cb(gpnet->lldsock, rx_notify_cb, gpnet);
  
  		if(cb_reg_multicast_address(gpnet->lldsock,
  					ndev->nlstatus.devname, destmac, 0)) {
-@@ -369,6 +462,9 @@ static int onenet_init(uint8_t gptpInstanceIndex, gptpnet_data_t *gpnet,
- 			gpnet->lldsock = NULL;
- 			return -1;
- 		}
-+		UB_LOG(UBL_INFO, "%s: multicast registration complete tsSource=%s dev=%s\n",
-+			   __func__, gptpnet_ts_source_name(gpnet->tsSource),
-+			   ndev->nlstatus.devname);
- 	} else {
- 		if (cb_get_mac_bydev(gpnet->lldsock, ndev->nlstatus.devname, srcmac)) {
- 			return -1;
-@@ -430,6 +526,24 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
- 	(void)memset(gpnet, 0, sizeof(gptpnet_data_t));
- 	gpnet->gptpInstanceIndex=gptpInstanceIndex;
- 	gpnet->num_netdevs = num_ports;
-+
-+	if (cb_lld_get_ts_source(&gpnet->tsSource) < 0) {
-+		UB_LOG(UBL_ERROR, "%s:failed to get timestamp source\n", __func__);
-+		UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet);
-+		return NULL;
-+	}
-+	if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_INVALID) {
-+		UB_LOG(UBL_ERROR, "%s:invalid timestamp source\n", __func__);
-+		UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet);
-+		return NULL;
-+	}
-+	UB_LOG(UBL_INFO, "%s: tsSource=%s\n", __func__,
-+		   gptpnet_ts_source_name(gpnet->tsSource));
-+	UB_LOG(UBL_INFO, "%s: notify policy tx=%s rx=%s\n", __func__,
-+		   (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) ? "off" : "main",
-+		   (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) ? "status" : "main");
-+	UB_LOG(UBL_INFO, "%s: status worker %s\n", __func__,
-+		   (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) ? "enabled" : "disabled");
- 	gpnet->netdevices =
- 		(netdevice_t *)UB_SD_GETMEM(GPTP_MEDIUM_ALLOC, num_ports * sizeof(netdevice_t));
- 	if(ub_assert_fatal(gpnet->netdevices, __func__, "malloc")){
-@@ -470,11 +584,13 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+@@ -370,6 +438,15 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+ 	}
+ 	(void)memset(gpnet->netdevices, 0, num_ports * sizeof(netdevice_t));
  
- 	LLDTSyncCfgInit(&tsyncfg);
- 	cb_lld_get_type_instance(&tsyncfg.enetType, &tsyncfg.instId);
--	gpnet->lldtsync = LLDTSyncOpen(&tsyncfg);
-+	gpnet->lldtsync = LLDTSyncOpen(&tsyncfg, gpnet->tsSource);
- 	if (gpnet->lldtsync == NULL) {
- 		UB_LOG(UBL_ERROR,"%s:failed to open lldtsync!\n", __func__);
++	if (CB_SEM_INIT(&gpnet->semaphore, 0, 0) < 0) {
++		UB_LOG(UBL_ERROR,"%s:failed to init sem!\n", __func__);
++		goto error;
++	}
++	if (CB_SEM_INIT(&gpnet->statPktSem, 0, 0) < 0) {
++		UB_LOG(UBL_ERROR,"%s:failed to init status sem!\n", __func__);
++		goto error;
++	}
++
+ 	for (i = 0; i < gpnet->num_netdevs; i++) {
+ 		res = onenet_init(gptpInstanceIndex, gpnet, &gpnet->netdevices[i], netdev[i]);
+ 		if (res < 0) {
+@@ -391,11 +468,6 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
  		goto error;
  	}
-+	UB_LOG(UBL_INFO, "%s: lldtsync opened with tsSource=%s\n", __func__,
-+		   gptpnet_ts_source_name(gpnet->tsSource));
  
- 	res = LLDTSyncEnableTsEvent(gpnet->lldtsync, ports, nports);
- 	if (res != LLDENET_E_OK) {
-@@ -484,7 +600,7 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
+-	if (CB_SEM_INIT(&gpnet->semaphore, 0, 0) < 0) {
+-		UB_LOG(UBL_ERROR,"%s:failed to init sem!\n", __func__);
+-		goto error;
+-	}
+-
+ 	LLDTSyncCfgInit(&tsyncfg);
+ 	cb_lld_get_type_instance(&tsyncfg.enetType, &tsyncfg.instId);
+ 	gpnet->lldtsync = LLDTSyncOpen(&tsyncfg);
+@@ -412,6 +484,18 @@ gptpnet_data_t *gptpnet_init(uint8_t gptpInstanceIndex, gptpnet_cb_t cb_func,
  
  	UB_LOG(UBL_INFO,"%s:Open lldtsync OK!\n", __func__);
  
--	{
-+	if (gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) {
- 		cb_tsn_thread_attr_t attr;
- 
- 		cb_tsn_thread_attr_init(&attr, 3, (16 * 1024), "gptp_status");
-@@ -557,6 +673,8 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
- 	uint16_t seqid;
- 	uint8_t domain;
- 	int res;
-+	bool queuedTxts = false;
-+	txts_info_t txts_info;
- 
- 	if (length > GPTP_MAX_PACKET_SIZE) {
- 		UB_LOG(UBL_ERROR, "%s:deviceIndex = %d, length = %d is too big\n",
-@@ -573,19 +691,48 @@ int gptpnet_send(gptpnet_data_t *gpnet, int ndev_index, uint16_t length)
- 	seqid = PTP_HEAD_SEQID(ndev->txbuf.pdata);
- 	domain = PTP_HEAD_DOMAIN_NUMBER(ndev->txbuf.pdata);
- 
--	res = CB_SOCK_SENDTO(gpnet->lldsock, &ndev->txbuf, length+sizeof(CB_ETHHDR_T),
--						 0, &ndev->addr, sizeof(ndev->addr));
--	if (res < 0) {
--		UB_LOG(UBL_ERROR,"%s:sent %s failed\n", __func__, msg);
--		return -1;
--	}
- 	if (msgtype < 8) {
--		txts_info_t txts_info;
-+		memset(&txts_info, 0, sizeof(txts_info));
- 		txts_info.ndev_index = ndev_index;
- 		txts_info.seqid = seqid;
- 		txts_info.msgtype = msgtype;
- 		txts_info.domain = domain;
--		push_txts_info(&gpnet->txts_queue, &txts_info);
-+		if (push_txts_info(&gpnet->txts_queue, &txts_info) == 0) {
-+			queuedTxts = true;
-+			gpnet->txtsQueued++;
-+			gptpnet_log_txts_summary(gpnet, "queued", gpnet->txtsQueued);
-+		} else {
-+			UB_LOG(UBL_ERROR, "%s:failed to queue TxTS tracking for %s seqid=%u\n",
-+				   __func__, msg, seqid);
++	{
++		cb_tsn_thread_attr_t attr;
++
++		cb_tsn_thread_attr_init(&attr, 3, (16 * 1024), "gptp_status");
++		if (CB_THREAD_CREATE(&gpnet->statusThread, &attr,
++							 gptpnet_statusFrameProcTask, gpnet) != 0) {
++			UB_LOG(UBL_ERROR, "%s:failed to create status worker\n", __func__);
++			goto error;
 +		}
-+		if ((gpnet->tsSource == LLDTSYNC_TS_SOURCE_PHY) && queuedTxts) {
-+			res = LLDTsyncPhyWaitTxTs(gpnet->lldtsync, ndev->addr.macport, msgtype,
-+									  seqid, domain);
-+			if ((res != LLDENET_E_OK) && (res != LLDENET_E_NOAVAIL)) {
-+				gpnet->txtsWaitErr++;
-+				if (gptpnet_should_log_counter(gpnet->txtsWaitErr, 256U)) {
-+					UB_LOG(UBL_ERROR,
-+						   "%s:LLDTsyncPhyWaitTxTs failed %d for %s seqid=%u domain=%u macport=%d waitErr=%u\n",
-+						   __func__, res, msg, seqid, domain, ndev->addr.macport,
-+						   gpnet->txtsWaitErr);
-+				}
-+			}
-+		}
++		gpnet->statusThreadRunning = true;
 +	}
 +
-+	res = CB_SOCK_SENDTO(gpnet->lldsock, &ndev->txbuf, length+sizeof(CB_ETHHDR_T),
-+						 0, &ndev->addr, sizeof(ndev->addr));
-+	if (res < 0) {
-+		if (queuedTxts) {
-+			txts_info_t discardTxtsInfo;
-+
-+			if (pop_txts_info(&gpnet->txts_queue, &discardTxtsInfo) == 0) {
-+				gpnet->txtsSendUndo++;
-+				gptpnet_log_txts_summary(gpnet, "send-undo", gpnet->txtsSendUndo);
-+			}
-+		}
-+		UB_LOG(UBL_ERROR,"%s:sent %s failed\n", __func__, msg);
-+		return -1;
+ 	return gpnet;
+ 
+ error:
+@@ -424,6 +508,12 @@ int gptpnet_close(gptpnet_data_t *gpnet)
+ 	UB_LOG(UBL_DEBUGV, "%s:\n",__func__);
+ 	if (!gpnet) {return -1;}
+ 	gptpgcfg_remove_netdevs(gpnet->gptpInstanceIndex);
++	if (gpnet->statusThreadRunning) {
++		gpnet->bStopped = true;
++		CB_SEM_POST(&gpnet->statPktSem);
++		CB_THREAD_JOIN(gpnet->statusThread, NULL);
++		gpnet->statusThreadRunning = false;
++	}
+ 	if (gpnet->lldsock) {
+ 		cb_rawsock_close(gpnet->lldsock);
+ 		gpnet->lldsock = NULL;
+@@ -436,6 +526,10 @@ int gptpnet_close(gptpnet_data_t *gpnet)
+ 		CB_SEM_DESTROY(&gpnet->semaphore);
+ 		gpnet->semaphore = NULL;
  	}
- 	return res;
- }
-@@ -600,6 +747,8 @@ static int provide_txts(gptpnet_data_t *gpnet, txts_info_t *txts_info, uint64_t
- 	edtxts.domain = txts_info->domain;
- 	edtxts.ts64 = ts;
- 
-+	gpnet->txtsProvided++;
-+	gptpnet_log_txts_summary(gpnet, "provided", gpnet->txtsProvided);
- 	gpnet->cb_func(gpnet->cb_data, txts_info->ndev_index+1, GPTPNET_EVENT_TXTS,
- 				   &gpnet->event_ts64, &edtxts);
- 	return 0;
-@@ -718,10 +867,20 @@ static int process_txts(gptpnet_data_t *gpnet)
- 		if (pop_txts_info(&gpnet->txts_queue, &txts_info) < 0) {
- 			break;
- 		}
-+		gpnet->txtsDequeued++;
- 		macport = ndev_index_to_macport(gpnet, txts_info.ndev_index);
- 		res = LLDTSyncGetTxTime(gpnet->lldtsync, macport, txts_info.msgtype,
- 				txts_info.seqid, txts_info.domain, &ts);
- 		if (res != LLDENET_E_OK) {
-+			if (res == LLDENET_E_NOAVAIL) {
-+				gpnet->txtsLookupNoAvail++;
-+				gptpnet_log_txts_summary(gpnet, "lookup-noavail",
-+										 gpnet->txtsLookupNoAvail);
-+			} else {
-+				gpnet->txtsLookupErr++;
-+				gptpnet_log_txts_summary(gpnet, "lookup-err",
-+										 gpnet->txtsLookupErr);
-+			}
- 			continue;
- 		}
- 		provide_txts(gpnet, &txts_info, ts);
-diff --git a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_ptpdevclock.c b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_ptpdevclock.c
-index 68125de09b2810e805ef7f69e11f4cd31cd16913..110b9a8168335e203e3a64b51eb0c1090fcb0c0a 100644
---- a/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_ptpdevclock.c
-+++ b/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_ptpdevclock.c
-@@ -55,10 +55,19 @@
- PTPFD_TYPE ptpdev_clock_open(char *ptpdev, int permission)
- {
- 	LLDTSyncCfg_t tsyncfg;
-+	LLDTsyncTsSource tsSource = LLDTSYNC_TS_SOURCE_INVALID;
-+
-+	(void)ptpdev;
-+	(void)permission;
- 
- 	LLDTSyncCfgInit(&tsyncfg);
- 	cb_lld_get_type_instance(&tsyncfg.enetType, &tsyncfg.instId);
--	return LLDTSyncOpen(&tsyncfg);
-+	if ((cb_lld_get_ts_source(&tsSource) < 0) ||
-+		(tsSource == LLDTSYNC_TS_SOURCE_INVALID)) {
-+		UB_LOG(UBL_ERROR, "%s: invalid timestamp source\n", __func__);
-+		return NULL;
++	if (gpnet->statPktSem) {
++		CB_SEM_DESTROY(&gpnet->statPktSem);
++		gpnet->statPktSem = NULL;
 +	}
-+	return LLDTSyncOpen(&tsyncfg, tsSource);
- }
+ 	UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet->netdevices);
+ 	UB_SD_RELMEM(GPTP_MEDIUM_ALLOC, gpnet);
+ 	return 0;
+diff --git a/notes/dev_diary_psf_timing_and_am275x.md b/notes/dev_diary_psf_timing_and_am275x.md
+index 3369926730d11dfdbecf5a5ea07c93b1486b9c1d..de9c4ce400268787fef381770ae1123cce8f65e8 100644
+--- a/notes/dev_diary_psf_timing_and_am275x.md
++++ b/notes/dev_diary_psf_timing_and_am275x.md
+@@ -1041,6 +1041,16 @@ live timing path.
+ If we revisit the oracle/PSF work later, this is probably the most important
+ structural reference in the AM275x SDK.
  
- int ptpdev_clock_close(PTPFD_TYPE fd)
++
++
++
++                                                                      
++        _ _           _                        
++  /\/\ (_) | ___  ___| |_ ___  _ __   ___  ___ 
++ /    \| | |/ _ \/ __| __/ _ \| '_ \ / _ \/ __|
++/ /\/\ \ | |  __/\__ \ || (_) | | | |  __/\__ \
++\/    \/_|_|\___||___/\__\___/|_| |_|\___||___/
++---------------------------------------------
+ ## Milestone Checklist and Validation Gates
+ 
+ The sequencing matters.
+@@ -1063,6 +1073,68 @@ In other words:
+ 
+ That is the order most consistent with the evidence from `test25`.
+ 
++### Branch and Commit Anchors
++
++Fill these in when the branch structure is finalized.
++
++- stable pre-oracle baseline branch:
++  - `<fill me in>`
++- stable pre-oracle baseline commit:
++  - `<fill me in>`
++- first oracle / first PSF backend attempt branch:
++  - `<fill me in>`
++- first oracle / first PSF backend attempt commit:
++  - `<fill me in>`
++- new architecture-reset branch:
++  - `<fill me in>`
++
++### First Test Artifacts to Read
++
++These are the fastest files for a new reader to inspect first.
++
++1. `test25.txt`
++
++Why:
++
++- shows the current "alive but still architecturally wrong" runtime state
++- contains evidence for:
++  - `missing TxTS`
++  - `TxTS is not expected`
++  - repeated `-14` lookup failures
++  - suspicious PSF decode such as `msgType=15`
++
++2. `notes/dev_diary_psf_timing_and_am275x.md`
++
++Why:
++
++- explains the timing problem and the AM275x reference architecture
++
++3. `notes/psf_packet_flow_investigation.md`
++
++Why:
++
++- background on the earlier PSF routing/missteering problem
++- still useful as historical context, but not the main roadmap for the new
++  branch
++
++### Known-Good / Known-Bad Reference States
++
++These are the runtime states we should compare against.
++
++#### Known-good reference
++
++- pre-oracle baseline run
++- gPTP stable on CPTS
++- no experimental PHY lookup involved in the live timestamp path
++
++#### Known-bad but informative reference
++
++- `test25.txt`
++- example survives
++- CPTS fallback works
++- PSF parser and correlation still not trustworthy
++- hot-path integration still too invasive
++
+ ### Milestone 0. Freeze the baseline and define the acceptance logs
+ 
+ Goal:
+@@ -1089,9 +1161,9 @@ Goal:
+ - make PSF/status-frame progress happen outside the hot gPTP event path
+ 
+ Implementation:
+-- add a separate semaphore for status-frame work
+-- add a dedicated PSF/status-frame task
+-- add an explicit drain point that identifies PSFs and routes them into
++- add a separate status semaphore
++- add a dedicated status worker/task
++- add the explicit LLD drain point that peels PSFs out before ordinary receive
+   `processStatusFrame` handling before normal event consumption continues
+ 
+ What this milestone should not do:
+@@ -1119,6 +1191,178 @@ Completion criteria:
+ - main gPTP loop no longer needs to be the place where PSF progress happens
+ - no new build or runtime instability is introduced
+ 
++#### Milestone 1. Worker + drain path
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c`
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c`
++
++Why:
++
++- `lld_gptpnet.c` currently posts only the main semaphore
++- our tree does not yet expose the AM275x-style explicit status-frame drain
++  path
++
++## 2026-03-26: PSF Steering, Oracle Detour, and What AM275x Actually Changed in Our Thinking
++
++### What We Thought
++**This is a prime opportunity to explain packet flow in the thesis** 
++Observed: the earliest hard problem was not "we need a better timestamp source"   <!-- somewhat redundant just keep in mind that the overall goal is PHY PSF utilization, also it doesnt really mention the reason for why we split of PSFs in the first place. maybe gptp_starvation_fix_normalized.patch gives an indication. please clarify here.--> 
++but "PHY status frames are arriving in the wrong part of the receive topology and
++can destabilize gPTP if they are treated like ordinary PTP traffic." The first  <!-- specify what "the wrong part" is, this being somewhat on the path to PTP, please specify where exactly -->
++serious response to that was [`psf_ingest_fix_clean.patch`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/psf_ingest_fix_clean.patch),
++which is best understood as a steering/containment patch, not as a worker/drain
++architecture. That patch added `rxFilterDstMac` in
++[`cb_ethernet.h`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/cb_ethernet.h),
++propagated it into the LLD config path in
++[`cb_lld_ethernet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/cb_lld_ethernet.c),
++used it from
++[`lld_gptpnet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c)
++to narrow the owner-side RX path to `ETH_P_1588 + gPTP multicast MAC`, and
++changed
++[`lldenet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c)
++to support delete-before-replace classifier management via
++`CPSW_ALE_IOCTL_GET_POLICER`, plus explicit owner-side `owner-drop-psf` behavior.
++Inference: the intent was sound for the old crash mode. If PSFs cannot reach the
++gPTP-owned receive path, they also cannot reach the parser/state-machine path.
++But that was still fundamentally a steering fix. It did not create a safe place
++for PSFs to exist; it only tried to keep them out.
++
++### What Broke in the Next Idea
++
++Observed: the next branch idea, captured in
++[`dp83tc812_timestamp_oracle_unstaged_clean.patch`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/dp83tc812_timestamp_oracle_unstaged_clean.patch),
++went in a different direction. Instead of first redesigning ownership and
++draining, it tried to make the PHY useful as a keyed timestamp oracle by adding
++PHY IOCTLs for `WAIT_TX_TIMESTAMP`, `GET_TX_TIMESTAMP`, and `GET_RX_TIMESTAMP`.
++This was an attempt to make the PHY answer timestamp lookup questions by message
++identity, using the status-frame store as the raw material, without yet doing the
++full receive-path redesign.
++
++Observed and important anti-conflation note: in the current AWR SDK, that oracle
++work does **not** mean PSFs are already feeding the live gPTP state-machine timing
++path. The live AWR Tx timestamp ingress remains CPTS-based in
++[`lld_gptpnet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c),
++which queues `txts_info` and calls `LLDTSyncGetTxTime()`. That function in
++[`sitara/lldtsync.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c)
++still resolves TxTS through `ENET_TIMESYNC_IOCTL_GET_ETH_TX_TIMESTAMP`. The
++result is passed into `GPTPNET_EVENT_TXTS` and then into the state-machine side in
++[`gptpman.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/gptpman.c).
++Meanwhile the PSF side is separate: `LLDTSyncProcPhyStatusFrame()` forwards frames
++to `ENET_PHY_IOCTL_PTP_PROCESS_STATUS_FRAME`, and
++[`dp83tc812.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c)
++currently stores decoded PSFs into `gDp83tc812PsfRing` and prints debug, but does
++not in the present AWR tree feed those PSFs directly into the gPTP state machine.
++Future readers need to keep this boundary straight: "PHY timestamp oracle work
++exists" is not the same statement as "AWR gPTP timing already runs off PSFs."
++
++### What the Logs Actually Taught Us
++
++Observed: [`test19.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test19.txt)
++is still the right baseline for the "this mostly forked fine" period. It already
++contains one `missing TxTS` and one `TxTS is not expected` mismatch, but only one
++clear mismatch pair. That matters because it tells us the later flood of warnings
++was not the original steady state; there was probably already a latent issue, but
++not at the later frequency.
++
++Observed: [`test26.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test26.txt)
++showed the first Milestone 1 worker/drain plumbing was structurally alive but not
++yet owning PSFs. The worker started, woke up, and logged
++`LLDEnetLogStatusDrain: ... drainedStatus=0`, while default flow still printed
++`default-flow summary ... phyStatus=58`. Inference: Milestone 1 proved we could
++build the worker-visible drain path, but the old steering still meant PSFs were
++not arriving where the worker could actually peel them off.
++
++Observed: [`test27.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test27.txt)
++showed that the first reversal was incomplete. Startup failed with
++`CPSW_ALE_IOCTL_GET_POLICER failed -13`. The reason was not mysterious after
++inspection: we had removed some of the narrowing and drop behavior, but the old
++delete-before-replace classifier stack from
++[`psf_ingest_fix_clean.patch`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/psf_ingest_fix_clean.patch)
++was still active in
++[`lldenet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c).
++That was the point where it became obvious that "undo the bad steering" meant
++undoing a whole steering stack, not just one filter assignment.
++
++Observed: [`test28.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test28.txt)
++is the first log that really demonstrates the redesign working as intended at the
++routing/ownership layer. Startup succeeds, `dev:tilld0 open success` comes back,
++the status worker starts, and `LLDEnetLogStatusDrain` increments
++`drainedStatus=1/2/3`. gPTP reaches `gmsync=true`. That is the missing proof from
++`test26`: PSFs are now in the worker-visible path instead of being owned primarily
++by default flow.
++
++Working hypothesis: the increase in `missing TxTS` / `TxTS is not expected`
++warnings after the worker redesign is best treated as a secondary timing/scheduling
++effect, not as evidence that PSFs are being injected into the gPTP state machine
++as frames. The strongest code-level suspect in the current AWR tree is still the
++CPTS-side polling logic in
++[`lld_gptpnet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c):
++`gptpnet_catch_event()` always runs `process_txts()` after every semaphore wake,
++the new worker now posts that semaphore more often, and `process_txts()` pops a
++pending `txts_info` entry before confirming that `LLDTSyncGetTxTime()` can
++actually resolve a CPTS timestamp. If the CPTS event is not ready yet, the request
++is effectively dropped. This fits both the single mismatch in
++[`test19.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test19.txt) and the more
++frequent warnings in
++[`test28.txt`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/test28.txt), but it is
++still a hypothesis and should not be written down as proven root cause.
++
++### What AM275x Actually Taught Us
++
++Observed: the architectural inspiration from AM275x was not "copy its timestamp
++backend" but "copy its ownership/drain structure." In the AM275x SDK,
++[`AM275x lld_gptpnet.c`](/mnt/c/ti/freertos_sdk_am275x_11_00_00_16/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c)
++contains a dedicated `statPktSem`, a status-frame processing task, and a call to
++`cb_lld_process_status_frames()` before reposting the main semaphore. On the LLD
++side,
++[`AM275x lldenet.c`](/mnt/c/ti/freertos_sdk_am275x_11_00_00_16/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldenet.c)
++contains the status-frame drain path that forwards those frames into
++`LLDTSyncProcPhyStatusFrame()`. Inference: AM275x showed us the architectural
++separation we were missing. Status-frame ownership/drain, ordinary gPTP RX, and
++timestamp/status backend plumbing should be distinct concerns.
++
++Observed: this is exactly where FreeRTOS and the common TSN wrapper layer help.
++The right primitives are not clever packet heuristics; they are task boundaries,
++semaphores, and a wake-and-drain model. AM275x showed a practical pattern using a
++dedicated worker, a status semaphore, and a thin wrapper boundary between gPTP and
++lower-level timestamp/status handling. That led directly to the Milestone 1 design
++on AWR.
++
++Anti-conflation note: AM275x is the source of the **worker/drain architecture**,
++not proof that AWR has already adopted the AM275x end-to-end timestamp model. At
++this stage AWR still uses CPTS for the live TxTS ingress into gPTP. PSF handling
++on AWR is being restructured around ownership and draining, but the timestamp
++backend used by the state machine is still the AWR/CPTS one.
++
++### Where Milestone 1 and Milestone 1.5 Fit
++
++Observed: [`Milestone1.patch`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/Milestone1.patch)
++is the real pivot, not a minor patch. It adds the status-frame header query
++support, thin `lldtsync` wrappers for PSF processing, the
++`cb_lld_process_status_frames()` / `LLDEnetProcessStatusFrames()` plumbing, and a
++dedicated status worker plus semaphore wiring in
++[`lld_gptpnet.c`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_gptp/tilld/lld_gptpnet.c).
++This was the moment we stopped pretending a steering tweak would be enough and
++started giving PSFs a proper staging/drain path.
++
++Observed: [`Milestone1_5.patch`](/mnt/c/ti/mmwave_mcuplus_sdk_04_07_01_04/Milestone1_5.patch)
++was the first corrective reversal on top of that redesign. It stopped default-flow
++ownership, reopened owner-side visibility, and removed explicit `owner-drop-psf`.
++But it was still incomplete because it did not yet remove the entire old
++delete-before-replace ALE steering stack, which is why `test27` still failed.
++
++What we learned: the original branch assumed we could make PSFs safe mostly by
++changing steering rules. The later work showed that this was the wrong level of
++abstraction. We actually needed an ownership/scheduling architecture, and the
++FreeRTOS-style toolset already available to us, tasks plus semaphores plus a clean
++drain hook, was the right way to build it. The remaining timing warnings matter,
++but they sit **after** this redesign lesson, not before it. The next mistake would
++be to forget that chronology and start treating the current AWR tree as if it were
++already an AM275x clone or as if PSF parser work were already the live source of
++gPTP Tx timestamps.
++
+ ### Milestone 2. Make `lldtsync` passive again
+ 
+ Goal:
+@@ -1150,6 +1394,19 @@ Completion criteria:
+ - expected PHY misses are not presented as hard failures
+ - CPTS-backed example behavior remains stable
+ 
++#### Milestone 2. Passive `lldtsync`
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c`
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/common/enet_phymdio_dflt_ioctl.c`
++
++Why:
++
++- `lldtsync.c` still does inline `tryPhyLookup()` and `tryPhyWait()`
++- IOCTL-layer logging still needs to treat expected misses as expected misses
++
++
+ ### Milestone 3. Add bounded PSF capture and dump support in the worker context
+ 
+ Goal:
+@@ -1188,6 +1445,17 @@ Completion criteria:
+ - we have raw evidence for parser debugging
+ - we can point to exact byte offsets rather than guessing
+ 
++#### Milestone 3. Bounded PSF capture
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c`
++- possibly the new worker/drain code if capture needs worker-context gating
++
++Why:
++
++- the raw PSF bytes and current decode live at the PHY backend boundary
++
+ ### Milestone 4. Fix PSF parsing and correlation until the ready queues are believable
+ 
+ Goal:
+@@ -1212,6 +1480,19 @@ Completion criteria:
+ - PSF decode looks believable on real traffic
+ - ready queues contain plausible `msgType`, `seqId`, and timestamp pairs
+ 
++#### Milestone 4. Parser and correlation fixup
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c`
++- possibly `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/include/core/enet_mod_phy.h`
++  only if contract changes become necessary
++
++Why:
++
++- the parser, wait registration, ready queues, and matching policy are all in
++  the PHY backend
++
+ ### Milestone 5. Re-enable meaningful CPTS shadow comparison
+ 
+ Goal:
+@@ -1238,6 +1519,18 @@ Completion criteria:
+ - PHY/CPTS comparison becomes a measurement tool rather than a source of timing
+   disturbance
+ 
++#### Milestone 5. CPTS shadow comparison
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/tsn/tsn-stack/tsn_combase/tilld/sitara/lldtsync.c`
++- maybe `dp83tc812.c` for additional compare-oriented counters
++
++Why:
++
++- compare mode should remain a thin measurement feature above a trustworthy PHY
++  backend
++
+ ### Milestone 6. Decide whether the PHY path is useful enough to keep
+ 
+ Goal:
+@@ -1277,6 +1570,17 @@ Validation:
+ Completion criteria:
+ - the implementation is easier to maintain without changing validated behavior
+ 
++#### Milestone 7. Cleanup / QoL
++
++Likely files:
++
++- `mcu_plus_sdk_awr2x44p_10_01_00_04/source/networking/enet/core/src/phy/dp83tc812.c`
++- any helper headers introduced to hold PHY PTP/PSF configuration logic
++
++Why:
++
++- most of the hardcoded register sequencing currently lives in the PHY driver
++
+ ## Practical Summary of the Order
+ 
+ If we want a short, actionable version, the order should be:
+@@ -1295,3 +1599,5 @@ The biggest mistake would be to spend a lot of time fine-tuning parser details
+ while PSF progress still lives in the hot path. That would make every parser
+ experiment look like a timing bug, and every timing bug look like a parser
+ problem.
++
++
